@@ -2,6 +2,8 @@
 
 A specialized Nostr client focused on the Nano cryptocurrency community. This client allows users to view posts from Nostr users who have Nano addresses in their profiles, send Nano tips, and interact with Lightning Network through Zaps.
 
+Live at https://mnpezz.github.io/xnostr/
+
 ## Features
 
 - **Nano-Focused Feed**: Toggle between all posts and posts only from users with Nano addresses

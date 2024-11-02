@@ -10,7 +10,38 @@
 <body>
     <div id="app">
         <div id="login-section">
-            <button id="connect-btn">Connect to Nostr</button>
+            <div class="welcome-container">
+                <h1>Welcome to Nostr Nano</h1>
+                <p class="welcome-text">A specialized Nostr client for the Nano cryptocurrency community.</p>
+                
+                <div class="features-list">
+                    <h3>Features:</h3>
+                    <ul>
+                        <li>🔍 View posts from Nano users</li>
+                        <li>🥦 Send Nano tips directly</li>
+                        <li>⚡ Support for Lightning zaps</li>
+                        <li>#️⃣ Track #nanocurrency hashtag</li>
+                    </ul>
+                </div>
+
+                <div class="login-options">
+                    <h3>Choose how to connect:</h3>
+                    
+                    <div class="login-option">
+                        <h4>Option 1: Connect with Extension</h4>
+                        <button id="connect-btn" class="primary-btn">Connect to Nostr</button>
+                        <p class="option-note">Recommended for desktop users with Alby extension</p>
+                    </div>
+
+                    <div class="login-option">
+                        <h4>Option 2: Login with Private Key</h4>
+                        <input type="password" id="nsec-input" placeholder="Enter your nsec..." class="nsec-input">
+                        <button id="nsec-login-btn" class="secondary-btn">Login with nsec</button>
+                        <p class="option-note">Alternative login method for mobile users. May not support all Nostr features.</p>
+                        <p class="warning-text">⚠️ Only enter your nsec on trusted devices</p>
+                    </div>
+                </div>
+            </div>
         </div>
         <div id="feed-section" style="display: none;">
             <!-- Add tabs -->

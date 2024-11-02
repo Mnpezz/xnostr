@@ -2,7 +2,7 @@
 
 A specialized Nostr client focused on the Nano cryptocurrency community. This client allows users to view posts from Nostr users who have Nano addresses in their profiles, send Nano tips, and interact with Lightning Network through Zaps.
 
-Please give everything 5 seconds to load. Nostr seems to take a few seconds to load everything up. after you click.. wait. Please be patient. Thank you. 
+Please give everything 5 seconds to load. Nostr seems to take a few seconds to load everything up. after every click.. wait. Please be patient. Thank you. 
 Live at https://mnpezz.github.io/xnostr/
 
 ## Features

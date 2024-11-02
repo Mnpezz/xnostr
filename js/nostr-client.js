@@ -4,6 +4,7 @@ class NostrClient {
         this.pubkey = null;
         this.profile = null;
         this.profileCache = new Map(); // Cache for profiles
+        this.privateKey = null;
     }
 
     async init() {
@@ -11,6 +12,14 @@ class NostrClient {
         console.log('NostrTools available:', window.NostrTools);
         console.log('nostr extension available:', window.nostr);
         this.pubkey = await utils.getPublicKey();
+        await this.connectToRelays();
+        await this.fetchProfile();
+    }
+
+    async initWithPrivateKey(privateKey) {
+        await this.loadSavedRelays();
+        this.privateKey = privateKey;
+        this.pubkey = window.NostrTools.getPublicKey(privateKey);
         await this.connectToRelays();
         await this.fetchProfile();
     }
@@ -68,7 +77,6 @@ class NostrClient {
 
     async publishEvent(event) {
         try {
-            // Create a basic event object
             const eventToSign = {
                 kind: event.kind,
                 created_at: Math.floor(Date.now() / 1000),
@@ -77,70 +85,65 @@ class NostrClient {
                 pubkey: this.pubkey
             };
 
-            // Get the event hash
             eventToSign.id = window.NostrTools.getEventHash(eventToSign);
 
-            try {
-                // Sign the event using the extension
-                const signedEvent = await window.nostr.signEvent(eventToSign);
-                
-                // Check if we got back a full signed event or just a signature
-                const finalEvent = typeof signedEvent === 'object' ? signedEvent : {
-                    ...eventToSign,
-                    sig: signedEvent
-                };
+            let signedEvent;
+            if (this.privateKey) {
+                // Sign with private key
+                const sig = window.NostrTools.signEvent(eventToSign, this.privateKey);
+                signedEvent = { ...eventToSign, sig };
+            } else {
+                // Sign with extension
+                signedEvent = await window.nostr.signEvent(eventToSign);
+            }
 
-                console.log('Publishing event:', finalEvent);
+            console.log('Publishing event:', signedEvent);
 
-                // Try to publish to each relay
-                let published = false;
-                const errors = [];
+            // Try to publish to each relay
+            let published = false;
+            const errors = [];
 
-                for (const relay of Object.values(this.relays)) {
-                    try {
-                        await new Promise((resolve, reject) => {
-                            const pub = relay.publish(finalEvent);
+            for (const relay of Object.values(this.relays)) {
+                try {
+                    await new Promise((resolve, reject) => {
+                        const pub = relay.publish(signedEvent);
+                        
+                        if (pub && typeof pub.on === 'function') {
+                            pub.on('ok', () => {
+                                console.log(`Published to ${relay.url}`);
+                                published = true;
+                                resolve();
+                            });
                             
-                            if (pub && typeof pub.on === 'function') {
-                                pub.on('ok', () => {
+                            pub.on('failed', reason => {
+                                console.error(`Failed to publish to ${relay.url}:`, reason);
+                                reject(reason);
+                            });
+
+                            // Add timeout
+                            setTimeout(() => reject('Timeout'), 5000);
+                        } else {
+                            // Handle case where publish returns a promise
+                            Promise.resolve(pub)
+                                .then(() => {
                                     console.log(`Published to ${relay.url}`);
                                     published = true;
                                     resolve();
-                                });
-                                
-                                pub.on('failed', reason => {
-                                    console.error(`Failed to publish to ${relay.url}:`, reason);
-                                    reject(reason);
-                                });
-
-                                // Add timeout
-                                setTimeout(() => reject('Timeout'), 5000);
-                            } else {
-                                // Handle case where publish returns a promise
-                                Promise.resolve(pub)
-                                    .then(() => {
-                                        console.log(`Published to ${relay.url}`);
-                                        published = true;
-                                        resolve();
-                                    })
-                                    .catch(reject);
-                            }
-                        });
-                    } catch (error) {
-                        errors.push(error.message || error);
-                    }
+                                })
+                                .catch(reject);
+                        }
+                    });
+                } catch (error) {
+                    errors.push(error.message || error);
                 }
-
-                if (!published) {
-                    throw new Error(`Failed to publish to any relay: ${errors.join(', ')}`);
-                }
-
-                console.log('Event published successfully');
-                return finalEvent;
-            } catch (error) {
-                console.error('Error signing or publishing event:', error);
-                throw error;
             }
+
+            if (!published) {
+                throw new Error(`Failed to publish to any relay: ${errors.join(', ')}`);
+            }
+
+            console.log('Event published successfully');
+            return signedEvent;
         } catch (error) {
             console.error('Error in publishEvent:', error);
             throw error;
@@ -280,9 +283,9 @@ class NostrClient {
                 ],
             };
 
-            // Sign and publish the event
-            await this.publishEvent(zapRequest);
-            return zapRequest;
+            // Sign and publish the event only once
+            const signedEvent = await this.publishEvent(zapRequest);
+            return signedEvent; // Return the signed event instead of the request
         } catch (error) {
             console.error('Error creating zap request:', error);
             throw error;

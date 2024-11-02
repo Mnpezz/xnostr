@@ -6,52 +6,43 @@ Live at https://mnpezz.github.io/xnostr/
 
 ## Features
 
-- **Nano-Focused Feed**: Toggle between all posts and posts only from users with Nano addresses
-- **Hashtag Support**: Automatically includes posts with #nanocurrency
-- **Dual Payment Options**: 
-  - Send Nano tips directly through nano.to
-  - Send Lightning Zaps through Alby
+- **Dual Feed System**: 
+  - General Feed: View all Nostr posts
+  - Nano Feed: View posts only from users with Nano addresses in their profiles
 - **Profile Management**:
   - Set your display name
-  - Add your Nano address
+  - Add your Nano address (required for posts to appear in Nano feed)
   - Add your Lightning address
   - View and edit your profile details
+- **Payment Options**:
+  - Send Nano tips directly through nano.to
+  - Send Lightning Zaps through Alby
 - **Relay Management**:
   - Add and remove relays
   - View active relay connections
   - Persistent relay settings
 
-## Prerequisites
+## Getting Started
 
-- A modern web browser
-- [Alby Extension](https://getalby.com/) for Lightning Network interactions
-- A Nano wallet for sending tips
+1. **Add Your Nano Address**:
+   - Go to the Profile tab
+   - Add your Nano address in the profile form
+   - Your posts will now appear in the Nano feed
 
-## Usage
-
-1. **Connect to Nostr**:
-   - Click "Connect to Nostr"
-   - Approve the connection in your Alby extension
-
-2. **View Posts**:
-   - Toggle "Show only posts from users with Nano addresses" to filter the feed
-   - Posts with #nanocurrency will be included
-   - Historical posts from users with Nano addresses are automatically loaded
+2. **View Nano-Related Content**:
+   - Switch to the "Nano Feed" tab
+   - See posts from other users who have added their Nano addresses
 
 3. **Send Tips**:
    - Click "🥦 Nano Tip" to send Nano through nano.to
    - Click "⚡ Zap" to send sats through Lightning Network
 
-4. **Manage Profile**:
-   - Go to the Profile tab
-   - Add your Nano address
-   - Add your Lightning address
-   - Update your display name and about section
+## Prerequisites
 
-5. **Manage Relays**:
-   - Go to the Settings tab
-   - Add or remove relays
-   - Changes are saved automatically
+- A modern web browser
+- [Alby Extension](https://getalby.com/) for desktop Lightning Network interactions
+- A Nano wallet for sending tips
+- Your nsec key for mobile login (optional)
 
 ## Technical Details
 

@@ -10,6 +10,7 @@ class App {
         this.initialLoadLimit = 100;
         this.setupEventListeners();
         this.setupBackToTop();
+        document.getElementById('nsec-login-btn')?.addEventListener('click', () => this.loginWithNsec());
     }
 
     setupEventListeners() {
@@ -481,15 +482,9 @@ class App {
 
     async sendZap(pubkey) {
         try {
-            // Check if webln is available
-            if (typeof window.webln === 'undefined') {
+            // Check if webln is available (only needed for extension method)
+            if (!this.nostrClient.privateKey && typeof window.webln === 'undefined') {
                 alert('Please install a WebLN provider (like Alby) to send zaps!');
-                return;
-            }
-
-            // Check if nostr is available
-            if (typeof window.nostr === 'undefined') {
-                alert('Please install a Nostr provider (like Alby) to send zaps!');
                 return;
             }
 
@@ -500,28 +495,23 @@ class App {
                 return;
             }
 
-            // Request webln permissions
-            await window.webln.enable();
+            // If using extension, request webln permissions
+            if (!this.nostrClient.privateKey) {
+                await window.webln.enable();
+            }
 
             // Prompt for amount
             const amount = prompt('Enter amount in sats:', '1000');
             if (!amount) return;
 
-            // Add error handling for invalid amount
             const sats = parseInt(amount);
             if (isNaN(sats) || sats <= 0) {
                 alert('Please enter a valid amount');
                 return;
             }
 
-            // Add validation for lnurl
-            if (!authorProfile.lud16) {
-                alert('No Lightning address found for this user');
-                return;
-            }
-
             try {
-                // Create and publish the zap request
+                // Create and publish the zap request (only once)
                 const zapRequest = await this.nostrClient.createZapRequest(pubkey, sats);
                 console.log('Zap request created:', zapRequest);
 
@@ -535,8 +525,14 @@ class App {
                     endpoint = `https://${domain}/.well-known/lnurlp/${name}`;
                 }
 
-                // Fetch the LNURL details
-                const response = await fetch(endpoint);
+                // Fetch the LNURL details with CORS mode
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
                 const lnurlData = await response.json();
                 console.log('LNURL data:', lnurlData);
 
@@ -548,8 +544,15 @@ class App {
                 const nostrJson = encodeURIComponent(JSON.stringify(zapRequest));
                 const callbackUrl = `${lnurlData.callback}?amount=${sats * 1000}&nostr=${nostrJson}`;
                 
-                // Get the invoice
-                const callbackResponse = await fetch(callbackUrl);
+                // Get the invoice with CORS mode
+                const callbackResponse = await fetch(callbackUrl, {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
                 if (!callbackResponse.ok) {
                     throw new Error(`Failed to get invoice: ${callbackResponse.status}`);
                 }
@@ -562,13 +565,27 @@ class App {
                 }
 
                 // Pay the invoice
-                const paymentResponse = await window.webln.sendPayment(invoiceData.pr);
-                console.log('Payment sent:', paymentResponse);
+                if (this.nostrClient.privateKey) {
+                    // For mobile/nsec users, show the invoice for manual payment
+                    const shouldPay = confirm('Copy invoice to clipboard and pay with your preferred wallet?');
+                    if (shouldPay) {
+                        await navigator.clipboard.writeText(invoiceData.pr);
+                        alert('Invoice copied to clipboard! Please pay with your Lightning wallet.');
+                    }
+                } else {
+                    // For extension users, use webln
+                    const paymentResponse = await window.webln.sendPayment(invoiceData.pr);
+                    console.log('Payment sent:', paymentResponse);
+                    alert('Zap sent successfully!');
+                }
 
-                alert('Zap sent successfully!');
             } catch (error) {
                 console.error('Zap error:', error);
-                alert('Failed to send zap: ' + error.message);
+                if (error.message.includes('CORS')) {
+                    alert('Unable to connect to the Lightning service. Please try again later.');
+                } else {
+                    alert('Failed to send zap: ' + error.message);
+                }
             }
         } catch (error) {
             console.error('Zap error:', error);
@@ -652,6 +669,37 @@ class App {
                 behavior: 'smooth'
             });
         });
+    }
+
+    async loginWithNsec() {
+        const nsecInput = document.getElementById('nsec-input');
+        const nsec = nsecInput.value.trim();
+        
+        try {
+            if (!nsec.startsWith('nsec1')) {
+                throw new Error('Invalid nsec format. Must start with nsec1');
+            }
+
+            // Convert nsec to private key
+            const privateKey = window.NostrTools.nip19.decode(nsec).data;
+            
+            // Initialize nostr client with private key
+            await this.nostrClient.initWithPrivateKey(privateKey);
+            
+            // Clear the nsec input
+            nsecInput.value = '';
+            
+            // Continue with normal login flow
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('feed-section').style.display = 'block';
+            this.loadProfile();
+            this.setupFeed();
+            this.updateRelayList();
+            
+        } catch (error) {
+            console.error('Login error:', error);
+            alert('Failed to login: ' + error.message);
+        }
     }
 }
 

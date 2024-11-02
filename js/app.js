@@ -117,7 +117,7 @@ class App {
         }
 
         if (count === 0) {
-            feed.innerHTML = '<div class="no-posts">No Nano-related posts found</div>';
+            feed.innerHTML = '<div class="no-posts">Searching for Nano-related posts</div>';
         }
     }
 

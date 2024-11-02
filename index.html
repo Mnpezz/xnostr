@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nostr Nano Client</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://pay.nano.to/latest.js"></script>
+</head>
+<body>
+    <div id="app">
+        <div id="login-section">
+            <button id="connect-btn">Connect to Nostr</button>
+        </div>
+        <div id="feed-section" style="display: none;">
+            <!-- Add tabs -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="feed-tab">Feed</button>
+                <button class="tab-btn" data-tab="profile-tab">Profile</button>
+                <button class="tab-btn" data-tab="settings-tab">Settings</button>
+            </div>
+
+            <!-- Feed Tab -->
+            <div id="feed-tab" class="tab-content active">
+                <div id="feed-controls">
+                    <label>
+                        <input type="checkbox" id="nano-only-toggle">
+                        Show only posts from users with Nano addresses
+                    </label>
+                </div>
+                <div id="post-form">
+                    <textarea id="post-content" placeholder="What's on your mind?"></textarea>
+                    <button id="post-btn">Post</button>
+                </div>
+                <div id="feed"></div>
+            </div>
+
+            <!-- Profile Tab -->
+            <div id="profile-tab" class="tab-content">
+                <div id="profile-section">
+                    <h3>Your Profile</h3>
+                    <div id="current-profile"></div>
+                    <form id="profile-form">
+                        <input type="text" id="profile-name" placeholder="Display Name">
+                        <input type="text" id="profile-about" placeholder="About">
+                        <input type="text" id="profile-nano" placeholder="Nano Address">
+                        <input type="text" id="profile-lightning" placeholder="Lightning Address">
+                        <button type="submit">Update Profile</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div id="settings-tab" class="tab-content">
+                <div id="relay-settings">
+                    <h3>Relay Settings</h3>
+                    <div id="relay-list"></div>
+                    <div id="add-relay">
+                        <input type="text" id="new-relay" placeholder="wss://relay.example.com">
+                        <button id="add-relay-btn">Add Relay</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Add Alby script -->
+    <script src="https://cdn.jsdelivr.net/npm/@getalby/sdk@1.1.1/dist/index.min.js"></script>
+    <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/nostr-client.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html> 

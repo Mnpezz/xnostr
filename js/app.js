@@ -9,6 +9,7 @@ class App {
         this.postsPerBatch = 20;
         this.initialLoadLimit = 100;
         this.setupEventListeners();
+        this.setupBackToTop();
     }
 
     setupEventListeners() {
@@ -80,25 +81,43 @@ class App {
 
     async refreshGeneralFeed() {
         const feed = document.getElementById('general-feed');
-        feed.innerHTML = '';
+        feed.innerHTML = '<div class="loading">Loading posts... <div class="spinner"></div></div>';
+        
+        let posts = Array.from(this.posts.values())
+            .sort((a, b) => b.created_at - a.created_at); // Sort by newest first
+        
+        feed.innerHTML = ''; // Clear loading message
         
         let count = 0;
-        for (const [id, event] of this.posts) {
+        for (const event of posts) {
             if (count >= this.initialLoadLimit) break;
             await this.renderEvent(event);
             count++;
+        }
+
+        if (count === 0) {
+            feed.innerHTML = '<div class="no-posts">No posts found</div>';
         }
     }
 
     async refreshNanoFeed() {
         const feed = document.getElementById('nano-feed');
-        feed.innerHTML = '';
+        feed.innerHTML = '<div class="loading">Loading Nano-related posts... <div class="spinner"></div></div>';
+        
+        let posts = Array.from(this.nanoPosts.values())
+            .sort((a, b) => b.created_at - a.created_at); // Sort by newest first
+        
+        feed.innerHTML = ''; // Clear loading message
         
         let count = 0;
-        for (const [id, event] of this.nanoPosts) {
+        for (const event of posts) {
             if (count >= this.initialLoadLimit) break;
             await this.renderEvent(event, true);
             count++;
+        }
+
+        if (count === 0) {
+            feed.innerHTML = '<div class="no-posts">No Nano-related posts found</div>';
         }
     }
 
@@ -352,7 +371,7 @@ class App {
             }
         }
 
-        feed.insertBefore(div, feed.firstChild);
+        feed.appendChild(div); // Changed from insertBefore to appendChild
     }
 
     createPaymentButtons(profile, pubkey) {
@@ -612,6 +631,27 @@ class App {
             console.error('Profile update error:', error);
             alert('Failed to update profile. Please try again.');
         }
+    }
+
+    setupBackToTop() {
+        const backToTopBtn = document.getElementById('back-to-top');
+        
+        // Show button when user scrolls down 300px
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 300) {
+                backToTopBtn.classList.add('visible');
+            } else {
+                backToTopBtn.classList.remove('visible');
+            }
+        });
+
+        // Scroll to top when button is clicked
+        backToTopBtn.addEventListener('click', () => {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        });
     }
 }
 

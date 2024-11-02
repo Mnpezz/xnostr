@@ -15,24 +15,27 @@
         <div id="feed-section" style="display: none;">
             <!-- Add tabs -->
             <div class="tabs">
-                <button class="tab-btn active" data-tab="feed-tab">Feed</button>
+                <button class="tab-btn active" data-tab="feed-tab">General Feed</button>
+                <button class="tab-btn" data-tab="nano-feed-tab">Nano Feed</button>
                 <button class="tab-btn" data-tab="profile-tab">Profile</button>
                 <button class="tab-btn" data-tab="settings-tab">Settings</button>
             </div>
 
             <!-- Feed Tab -->
             <div id="feed-tab" class="tab-content active">
-                <div id="feed-controls">
-                    <label>
-                        <input type="checkbox" id="nano-only-toggle">
-                        Show only posts from users with Nano addresses
-                    </label>
-                </div>
                 <div id="post-form">
                     <textarea id="post-content" placeholder="What's on your mind?"></textarea>
                     <button id="post-btn">Post</button>
                 </div>
-                <div id="feed"></div>
+                <div id="general-feed"></div>
+            </div>
+
+            <div id="nano-feed-tab" class="tab-content">
+                <div id="post-form">
+                    <textarea id="post-content" placeholder="What's on your mind?"></textarea>
+                    <button id="post-btn">Post</button>
+                </div>
+                <div id="nano-feed"></div>
             </div>
 
             <!-- Profile Tab -->

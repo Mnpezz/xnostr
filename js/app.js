@@ -1,9 +1,13 @@
 class App {
     constructor() {
         this.nostrClient = new NostrClient();
-        this.nanoOnly = false;
         this.posts = new Map(); // Store posts in memory
+        this.nanoPosts = new Map(); // Store nano-related posts
         this.knownNanoUsers = new Set(); // Cache users with Nano addresses
+        this.currentFeedTab = 'general-feed';
+        this.lastLoadedTime = Date.now();
+        this.postsPerBatch = 20;
+        this.initialLoadLimit = 100;
         this.setupEventListeners();
     }
 
@@ -18,11 +22,32 @@ class App {
             button.addEventListener('click', (e) => this.switchTab(e.target.dataset.tab));
         });
 
-        // Add nano-only toggle listener
-        document.getElementById('nano-only-toggle').addEventListener('change', (e) => {
-            this.nanoOnly = e.target.checked;
-            this.refreshFeed(); // Use refresh instead of clear and setup
-        });
+        // Add scroll event listener for infinite loading
+        window.addEventListener('scroll', this.handleScroll.bind(this));
+    }
+
+    handleScroll() {
+        if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 1000) {
+            this.loadMorePosts();
+        }
+    }
+
+    async loadMorePosts() {
+        const currentTime = Date.now();
+        if (currentTime - this.lastLoadedTime < 2000) return; // Prevent too frequent loads
+        
+        this.lastLoadedTime = currentTime;
+        const feed = document.getElementById(this.currentFeedTab);
+        const posts = this.currentFeedTab === 'nano-feed' ? this.nanoPosts : this.posts;
+        
+        let count = 0;
+        for (const [id, event] of posts) {
+            if (!document.getElementById(`post-${id}`)) {
+                await this.renderEvent(event);
+                count++;
+                if (count >= this.postsPerBatch) break;
+            }
+        }
     }
 
     switchTab(tabId) {
@@ -35,6 +60,46 @@ class App {
         document.querySelectorAll('.tab-content').forEach(content => {
             content.classList.toggle('active', content.id === tabId);
         });
+
+        // Handle feed tab switching
+        if (tabId === 'feed-tab') {
+            this.currentFeedTab = 'general-feed';
+            this.clearFeeds();
+            this.refreshGeneralFeed();
+        } else if (tabId === 'nano-feed-tab') {
+            this.currentFeedTab = 'nano-feed';
+            this.clearFeeds();
+            this.refreshNanoFeed();
+        }
+    }
+
+    clearFeeds() {
+        document.getElementById('general-feed').innerHTML = '';
+        document.getElementById('nano-feed').innerHTML = '';
+    }
+
+    async refreshGeneralFeed() {
+        const feed = document.getElementById('general-feed');
+        feed.innerHTML = '';
+        
+        let count = 0;
+        for (const [id, event] of this.posts) {
+            if (count >= this.initialLoadLimit) break;
+            await this.renderEvent(event);
+            count++;
+        }
+    }
+
+    async refreshNanoFeed() {
+        const feed = document.getElementById('nano-feed');
+        feed.innerHTML = '';
+        
+        let count = 0;
+        for (const [id, event] of this.nanoPosts) {
+            if (count >= this.initialLoadLimit) break;
+            await this.renderEvent(event, true);
+            count++;
+        }
     }
 
     async connect() {
@@ -146,27 +211,27 @@ class App {
     }
 
     setupFeed() {
-        // Get posts from the last 24 hours (can adjust this timeframe)
-        const since = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+        // Get posts from the last 48 hours
+        const since = Math.floor(Date.now() / 1000) - (48 * 60 * 60);
         
         const filters = [
             // Filter for regular posts
             {
                 kinds: [1],
                 since: since,
-                limit: 100
+                limit: this.initialLoadLimit
             },
             // Filter for posts with #nanocurrency
             {
                 kinds: [1],
                 '#t': ['nanocurrency'],
                 since: since,
-                limit: 100
+                limit: this.initialLoadLimit
             }
         ];
         
         this.nostrClient.subscribe(filters, async event => {
-            // Store the post
+            // Store the post in general feed
             this.posts.set(event.id, event);
             
             // Check if post has #nanocurrency tag
@@ -174,22 +239,19 @@ class App {
                 tag[0] === 't' && tag[1].toLowerCase() === 'nanocurrency'
             );
             
-            // Check if we already know this user has a Nano address
-            if (this.knownNanoUsers.has(event.pubkey)) {
-                this.renderEvent(event);
-                return;
-            }
-
             // Check if user has Nano address
             const hasNano = await this.nostrClient.hasNanoAddress(event.pubkey);
-            if (hasNano) {
-                this.knownNanoUsers.add(event.pubkey);
-                this.renderEvent(event);
-            } else if (!this.nanoOnly && hasNanoTag) {
-                // Show posts with #nanocurrency even if user doesn't have nano address
-                this.renderEvent(event);
-            } else if (!this.nanoOnly) {
-                this.renderEvent(event);
+            
+            if (hasNano || hasNanoTag) {
+                this.nanoPosts.set(event.id, event);
+                if (hasNano) this.knownNanoUsers.add(event.pubkey);
+            }
+
+            // Render if in the current feed
+            if (this.currentFeedTab === 'general-feed') {
+                await this.renderEvent(event);
+            } else if (this.currentFeedTab === 'nano-feed' && (hasNano || hasNanoTag)) {
+                await this.renderEvent(event, true);
             }
         });
 
@@ -198,8 +260,8 @@ class App {
     }
 
     async fetchHistoricalPosts() {
-        // Get posts from the last week
-        const since = Math.floor(Date.now() / 1000) - (7 * 24 * 60 * 60);
+        // Get posts from the last month for nano users (increased from 1 week)
+        const since = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
         
         for (const relay of Object.values(this.nostrClient.relays)) {
             try {
@@ -228,24 +290,27 @@ class App {
                         resolve(profiles);
                     });
 
-                    // Add timeout
-                    setTimeout(() => resolve(profiles), 5000);
+                    // Increase timeout for profile gathering
+                    setTimeout(() => resolve(profiles), 8000);
                 });
 
-                // Then get posts from these users
+                // Then get posts from these users with increased limit
                 if (profiles.size > 0) {
                     const postFilter = {
                         kinds: [1],
                         authors: Array.from(profiles),
                         since: since,
-                        limit: 500
+                        limit: 1000 // Increased from 500
                     };
 
                     sub = relay.sub([postFilter]);
                     sub.on('event', event => {
                         if (!this.posts.has(event.id)) {
                             this.posts.set(event.id, event);
-                            this.renderEvent(event);
+                            this.nanoPosts.set(event.id, event); // Add directly to nano posts
+                            if (this.currentFeedTab === 'nano-feed') {
+                                this.renderEvent(event, true);
+                            }
                         }
                     });
                 }
@@ -255,44 +320,18 @@ class App {
         }
     }
 
-    clearFeed() {
-        const feed = document.getElementById('feed');
-        feed.innerHTML = '';
-        // Don't clear the posts Map or knownNanoUsers Set
-    }
-
-    async refreshFeed() {
-        const feed = document.getElementById('feed');
-        feed.innerHTML = '';
-
-        // Re-render stored posts
-        for (const [id, event] of this.posts) {
-            if (this.nanoOnly) {
-                if (this.knownNanoUsers.has(event.pubkey)) {
-                    await this.renderEvent(event);
-                }
-            } else {
-                await this.renderEvent(event);
-            }
-        }
-    }
-
-    async renderEvent(event) {
-        // Check if this event is already rendered by checking for an element with this event ID
+    async renderEvent(event, isNanoFeed = false) {
+        const feedId = isNanoFeed ? 'nano-feed' : 'general-feed';
+        
+        // Check if this event is already rendered
         if (document.getElementById(`post-${event.id}`)) {
-            return; // Skip if already rendered
+            return;
         }
 
-        // Check if we should show this post based on nano-only setting
-        if (this.nanoOnly) {
-            const hasNano = await this.nostrClient.hasNanoAddress(event.pubkey);
-            if (!hasNano) return;
-        }
-
-        const feed = document.getElementById('feed');
+        const feed = document.getElementById(feedId);
         const div = document.createElement('div');
         div.className = 'post';
-        div.id = `post-${event.id}`; // Add unique ID to the post element
+        div.id = `post-${event.id}`;
         
         if (event.kind === 1) {
             try {

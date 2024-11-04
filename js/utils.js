@@ -19,8 +19,13 @@ const utils = {
 
     validateNanoAddress(address) {
         if (!address) return false;
-        const regex = /^(xno|nano)_[13][13456789abcdefghijkmnopqrstuwxyz]{59}$/;
-        return regex.test(address.toLowerCase());
+        
+        // Remove any "Nano: " prefix if present
+        const cleanAddress = address.replace(/^(?:Nano:\s*)?/i, '');
+        
+        // Updated regex to match both nano_ and xno_ addresses
+        const regex = /^(?:nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59}$/i;
+        return regex.test(cleanAddress);
     },
 
     rawToNano(raw) {

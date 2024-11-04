@@ -233,10 +233,21 @@ class NostrClient {
             this.profile = {};
         }
 
-        // Create a clean profile object with only the standard fields
+        // Clean up nano address format if present
+        let nanoAddress = '';
+        if (profileData.about) {
+            const nanoMatch = profileData.about.match(/(?:Nano:\s*)?((nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59})/i);
+            if (nanoMatch) {
+                nanoAddress = nanoMatch[1];
+                // Remove the nano address from the about field
+                profileData.about = profileData.about.replace(/\n?(?:Nano:\s*)?(?:nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59}/i, '').trim();
+            }
+        }
+
+        // Create a clean profile object
         const cleanProfile = {
             name: profileData.name || this.profile.name || '',
-            about: profileData.about || this.profile.about || '',
+            about: profileData.about + (nanoAddress ? `\nNano: ${nanoAddress}` : ''),
             picture: this.profile.picture || '',
             banner: this.profile.banner || '',
             nip05: this.profile.nip05 || '',
@@ -370,23 +381,32 @@ class NostrClient {
                     try {
                         const profile = JSON.parse(profileEvent.content);
                         
-                        // Look for Nano address in about field
-                        if (profile.about) {
-                            const nanoMatch = profile.about.match(/nano_[123456789abcdefghijkmnopqrstuwxyz]{60}/i);
-                            if (nanoMatch) {
-                                profile.nano_address = nanoMatch[0];
-                            }
-                        }
+                        // Look for Nano address in various formats
+                        const findNanoAddress = (text) => {
+                            if (!text || typeof text !== 'string') return null;
+                            
+                            // Match patterns:
+                            // 1. Nano: nano_xxx
+                            // 2. nano_xxx directly
+                            // 3. xno_xxx directly
+                            const nanoRegex = /(?:Nano:\s*)?((nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59})/i;
+                            const match = text.match(nanoRegex);
+                            return match ? match[1] : null;
+                        };
                         
-                        // Also check for custom nano field
-                        if (profile.nano) {
-                            profile.nano_address = profile.nano;
-                        }
+                        // Check multiple possible locations for nano address
+                        profile.nano_address = 
+                            findNanoAddress(profile.nano) || // Check dedicated nano field
+                            findNanoAddress(profile.about) || // Check about field
+                            findNanoAddress(profile.website) || // Check website field
+                            null;
 
                         sub.unsub();
                         return profile;
                     } catch (error) {
                         console.error('Error parsing profile:', error);
+                        sub.unsub();
+                        return null;
                     }
                 }
                 sub.unsub();
@@ -399,7 +419,180 @@ class NostrClient {
 
     // Add method to check if profile has nano address
     async hasNanoAddress(pubkey) {
-        const profile = await this.getProfileForPubkey(pubkey);
-        return profile && profile.nano_address ? true : false;
+        try {
+            const profile = await this.getProfileForPubkey(pubkey);
+            if (!profile) return false;
+            
+            // Check for nano address in various fields
+            const findNanoAddress = (text) => {
+                if (!text || typeof text !== 'string') return false;
+                const nanoRegex = /(?:nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59}/i;
+                return nanoRegex.test(text);
+            };
+
+            return findNanoAddress(profile.nano) || 
+                   findNanoAddress(profile.about) || 
+                   findNanoAddress(profile.website);
+        } catch (error) {
+            console.error('Error checking nano address:', error);
+            return false;
+        }
+    }
+
+    async getReactions(eventId) {
+        const reactions = {
+            likes: 0,
+            liked: false,
+            reposted: false
+        };
+
+        const seenReactions = new Set(); // Track unique reactions
+
+        const filter = {
+            kinds: [7, 6],
+            '#e': [eventId]
+        };
+
+        for (const relay of Object.values(this.relays)) {
+            try {
+                const events = await this.queryRelay(relay, filter);
+                for (const event of events) {
+                    // Create a unique key for this reaction
+                    const reactionKey = `${event.kind}-${event.pubkey}-${event.content}`;
+                    
+                    // Only count if we haven't seen this reaction before
+                    if (!seenReactions.has(reactionKey)) {
+                        seenReactions.add(reactionKey);
+                        
+                        if (event.kind === 7 && event.content === '+') {
+                            reactions.likes++;
+                            if (event.pubkey === this.pubkey) {
+                                reactions.liked = true;
+                            }
+                        } else if (event.kind === 6) {
+                            if (event.pubkey === this.pubkey) {
+                                reactions.reposted = true;
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching reactions:', error);
+            }
+        }
+
+        return reactions;
+    }
+
+    async getRepostCount(eventId) {
+        let count = 0;
+        const filter = {
+            kinds: [6],
+            '#e': [eventId]
+        };
+
+        for (const relay of Object.values(this.relays)) {
+            try {
+                const events = await this.queryRelay(relay, filter);
+                count += events.length;
+            } catch (error) {
+                console.error('Error fetching reposts:', error);
+            }
+        }
+
+        return count;
+    }
+
+    async getRepliesCount(eventId) {
+        let count = 0;
+        const filter = {
+            kinds: [1],
+            '#e': [eventId]
+        };
+
+        for (const relay of Object.values(this.relays)) {
+            try {
+                const events = await this.queryRelay(relay, filter);
+                count += events.length;
+            } catch (error) {
+                console.error('Error fetching replies:', error);
+            }
+        }
+
+        return count;
+    }
+
+    async getReplies(eventId) {
+        const replies = [];
+        const filter = {
+            kinds: [1],
+            '#e': [eventId]
+        };
+
+        for (const relay of Object.values(this.relays)) {
+            try {
+                const events = await this.queryRelay(relay, filter);
+                replies.push(...events);
+            } catch (error) {
+                console.error('Error fetching replies:', error);
+            }
+        }
+
+        return replies.sort((a, b) => a.created_at - b.created_at);
+    }
+
+    async createReply(eventId, content) {
+        const event = {
+            kind: 1,
+            content: content,
+            tags: [['e', eventId]],
+            created_at: Math.floor(Date.now() / 1000)
+        };
+
+        return await this.publishEvent(event);
+    }
+
+    async createRepost(eventId) {
+        const event = {
+            kind: 6,
+            content: '',
+            tags: [['e', eventId]],
+            created_at: Math.floor(Date.now() / 1000)
+        };
+
+        return await this.publishEvent(event);
+    }
+
+    async createReaction(eventId, reaction) {
+        const event = {
+            kind: 7,
+            content: reaction,
+            tags: [['e', eventId]],
+            created_at: Math.floor(Date.now() / 1000)
+        };
+
+        return await this.publishEvent(event);
+    }
+
+    // Helper method for querying relays
+    async queryRelay(relay, filter) {
+        return new Promise((resolve, reject) => {
+            const events = [];
+            const sub = relay.sub([filter]);
+            
+            sub.on('event', event => {
+                events.push(event);
+            });
+            
+            sub.on('eose', () => {
+                sub.unsub();
+                resolve(events);
+            });
+
+            setTimeout(() => {
+                sub.unsub();
+                resolve(events);
+            }, 3000);
+        });
     }
 } 

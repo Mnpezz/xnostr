@@ -3,7 +3,7 @@
     --secondary-color: #F7931A;
     --background-color: #f0f2f5;
     --card-background: #ffffff;
-    --text-primary: #333333;
+    --text-primary: #444444;
     --text-secondary: #666666;
     --border-color: #e1e4e8;
 }
@@ -26,8 +26,14 @@ body {
 #profile-section {
     margin-bottom: 20px;
     padding: 15px;
-    background: #f5f5f5;
+    background: var(--card-background);
     border-radius: 8px;
+    color: var(--text-primary);
+}
+
+.profile-info {
+    background: var(--card-background);
+    color: var(--text-primary);
 }
 
 #profile-form input {
@@ -378,11 +384,11 @@ button:hover {
 
 h1 {
     text-align: center;
-    color: #333;
+    color: #555;
 }
 
 h3 {
-    color: #444;
+    color: #555;
     margin-bottom: 15px;
 }
 
@@ -704,4 +710,238 @@ button:disabled {
 /* Style for buttons with spinners */
 button .spinner {
     margin-right: 8px;
+}
+
+.profile-keys {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    padding: 15px;
+    border-radius: 8px;
+    margin: 15px 0;
+}
+
+.key-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0;
+    padding: 8px;
+    background: var(--card-background);
+    color: var(--text-primary);
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.key-row button {
+    padding: 4px 8px;
+    font-size: 0.9em;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.key-row .address {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Update existing profile styles */
+.profile-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.profile-row:last-child {
+    border-bottom: none;
+}
+
+.profile-row .address {
+    font-family: monospace;
+    word-break: break-all;
+}
+
+.post-image {
+    position: relative;
+    min-height: 100px;
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Dark mode styles */
+.dark-mode {
+    --background-color: #1a1a1a;
+    --card-background: #2d2d2d;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --border-color: #404040;
+}
+
+/* Dark mode switch styles */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 34px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 34px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 26px;
+    width: 26px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: var(--primary-color);
+}
+
+input:checked + .slider:before {
+    transform: translateX(26px);
+}
+
+.dark-mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 20px 0;
+    padding: 15px;
+    background: var(--card-background);
+    border-radius: 8px;
+}
+
+.dark-mode .profile-keys {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.dark-mode .key-row {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.dark-mode #current-profile {
+    background: var(--card-background);
+    border-color: var(--border-color);
+}
+
+.dark-mode #profile-form input {
+    background: var(--card-background);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.dark-mode #profile-form input::placeholder {
+    color: var(--text-secondary);
+}
+
+/* Add hover effects for better interaction feedback */
+.dark-mode #profile-form input:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.dark-mode #profile-form input:focus {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--primary-color);
+}
+
+/* Ensure buttons remain visible in dark mode */
+.dark-mode .profile-row button,
+.dark-mode .key-row button {
+    background: var(--primary-color);
+    color: white;
+}
+
+.dark-mode .profile-row button:hover,
+.dark-mode .key-row button:hover {
+    background: #357ABD;
+}
+
+/* Dark mode styles for welcome container and components */
+.dark-mode .welcome-container {
+    background: var(--card-background);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.dark-mode .welcome-text {
+    color: var(--text-primary);
+}
+
+.dark-mode .features-list {
+    background: rgba(74, 144, 226, 0.1);
+    border-color: rgba(74, 144, 226, 0.2);
+}
+
+.dark-mode .features-list h3,
+.dark-mode .login-options h3,
+.dark-mode h1 {
+    color: var(--text-primary);
+}
+
+.dark-mode .login-option {
+    background: var(--card-background);
+    border-color: var(--border-color);
+}
+
+.dark-mode .option-note {
+    color: var(--text-secondary);
+}
+
+.dark-mode .important-note {
+    background: rgba(133, 100, 4, 0.2);
+    border-color: rgba(255, 193, 7, 0.3);
+    color: #ffc107;
+}
+
+.dark-mode .important-note h3 {
+    color: #ffc107;
+}
+
+.dark-mode .nsec-input {
+    background: var(--card-background);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.dark-mode .nsec-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.dark-mode .warning-text {
+    color: #ff6b6b;
 }

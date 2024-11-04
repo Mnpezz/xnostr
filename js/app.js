@@ -464,7 +464,14 @@ class App {
     }
 
     async connect() {
+        const connectBtn = document.getElementById('connect-btn');
+        const originalText = connectBtn.textContent;
+        
         try {
+            // Show loading state
+            connectBtn.disabled = true;
+            connectBtn.innerHTML = '<span class="spinner"></span> Connecting...';
+            
             // Check if Alby is installed
             if (typeof window.nostr === 'undefined') {
                 window.open('https://getalby.com', '_blank');
@@ -494,12 +501,17 @@ class App {
                 content.classList.toggle('active', content.id === 'nano-feed-tab');
             });
 
-            this.loadProfile();
-            this.setupFeed();
+            await this.loadProfile();
+            await this.setupFeed();
             this.updateRelayList();
+            
         } catch (error) {
             console.error('Connection error:', error);
             alert('Failed to connect: ' + error.message);
+        } finally {
+            // Reset button state
+            connectBtn.disabled = false;
+            connectBtn.textContent = originalText;
         }
     }
 
@@ -1256,9 +1268,15 @@ class App {
 
     async loginWithNsec() {
         const nsecInput = document.getElementById('nsec-input');
+        const loginBtn = document.getElementById('nsec-login-btn');
+        const originalText = loginBtn.textContent;
         const nsec = nsecInput.value.trim();
         
         try {
+            // Show loading state
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="spinner"></span> Logging in...';
+            
             if (!nsec.startsWith('nsec1')) {
                 throw new Error('Invalid nsec format. Must start with nsec1');
             }
@@ -1293,13 +1311,17 @@ class App {
             // Load everything in order
             await this.loadProfile();
             this.updateRelayList();
-            await this.setupFeed(); // This will now properly initialize the nano feed
+            await this.setupFeed();
             
             this.showSuccessMessage('Successfully logged in!');
             
         } catch (error) {
             console.error('Login error:', error);
             this.showErrorMessage('Failed to login: ' + error.message);
+        } finally {
+            // Reset button state
+            loginBtn.disabled = false;
+            loginBtn.textContent = originalText;
         }
     }
 

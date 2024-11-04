@@ -515,44 +515,100 @@ class App {
         }
     }
 
-    loadProfile() {
-        console.log('Current profile data:', this.nostrClient.profile);
+    async loadProfile() {
+        console.log('Loading profile data:', this.nostrClient.profile);
         
-        if (this.nostrClient.profile) {
-            // Extract nano address using the improved pattern
-            const about = this.nostrClient.profile.about || '';
-            const nanoMatch = about.match(/(?:Nano:\s*)?((nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59})/i);
-            const nanoAddress = nanoMatch ? nanoMatch[1] : '';
+        const currentProfile = document.getElementById('current-profile');
+        currentProfile.innerHTML = '<div class="loading">Loading profile...</div>';
+
+        try {
+            // Force a fresh profile fetch
+            await this.nostrClient.fetchProfile();
             
-            // Clean the about text by removing the nano address
-            const cleanAbout = about.replace(/\n?(?:Nano:\s*)?(?:nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59}/i, '').trim();
-
-            // Display current profile
-            const currentProfile = document.getElementById('current-profile');
-            currentProfile.innerHTML = `
-                <div><strong>Name:</strong> ${this.nostrClient.profile.name || 'Not set'}</div>
-                <div><strong>About:</strong> ${cleanAbout || 'Not set'}</div>
-                <div><strong>Nano Address:</strong> ${nanoAddress || 'Not set'}</div>
-                <div><strong>Lightning:</strong> ${this.nostrClient.profile.lud16 || 'Not set'}</div>
-                <div><strong>NIP-05:</strong> ${this.nostrClient.profile.nip05 || 'Not set'}</div>
-                ${this.nostrClient.profile.picture ? 
-                    `<div><strong>Picture:</strong> <img src="${this.nostrClient.profile.picture}" width="50" onerror="this.style.display='none'"></div>` : 
-                    '<div><strong>Picture:</strong> Not set</div>'
+            if (this.nostrClient.profile) {
+                // Extract nano address using multiple patterns
+                const about = this.nostrClient.profile.about || '';
+                let nanoAddress = '';
+                
+                // Check multiple possible formats
+                const nanoPatterns = [
+                    /(?:Nano:\s*)((?:nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59})/i,
+                    /((?:nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59})/i
+                ];
+                
+                for (const pattern of nanoPatterns) {
+                    const match = about.match(pattern);
+                    if (match) {
+                        nanoAddress = match[1];
+                        break;
+                    }
                 }
-            `;
+                
+                // Clean the about text by removing the nano address
+                const cleanAbout = about.replace(/\n?(?:Nano:\s*)?(?:nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59}/i, '').trim();
 
-            // Pre-fill form with existing data
-            document.getElementById('profile-name').value = this.nostrClient.profile.name || '';
-            document.getElementById('profile-about').value = cleanAbout || '';
-            document.getElementById('profile-nano').value = nanoAddress || '';
-            document.getElementById('profile-lightning').value = this.nostrClient.profile.lud16 || '';
-        } else {
-            console.log('No profile data available');
-            // Clear the form
-            document.getElementById('profile-name').value = '';
-            document.getElementById('profile-about').value = '';
-            document.getElementById('profile-nano').value = '';
-            document.getElementById('profile-lightning').value = '';
+                console.log('Parsed profile data:', {
+                    name: this.nostrClient.profile.name,
+                    about: cleanAbout,
+                    nanoAddress: nanoAddress,
+                    lightning: this.nostrClient.profile.lud16
+                });
+
+                // Display current profile
+                currentProfile.innerHTML = `
+                    <div class="profile-info">
+                        <div class="profile-header">
+                            <h3>Current Profile</h3>
+                            <small class="pubkey">Pubkey: ${this.nostrClient.pubkey}</small>
+                        </div>
+                        <div class="profile-row">
+                            <strong>Name:</strong> ${this.nostrClient.profile.name || 'Not set'}
+                        </div>
+                        <div class="profile-row">
+                            <strong>About:</strong> ${cleanAbout || 'Not set'}
+                        </div>
+                        <div class="profile-row">
+                            <strong>Nano Address:</strong> 
+                            ${nanoAddress ? `
+                                <span class="address">${nanoAddress}</span>
+                                <button onclick="navigator.clipboard.writeText('${nanoAddress}')">Copy</button>
+                            ` : 'Not set'}
+                        </div>
+                        <div class="profile-row">
+                            <strong>Lightning:</strong>
+                            ${this.nostrClient.profile.lud16 ? `
+                                <span class="address">${this.nostrClient.profile.lud16}</span>
+                                <button onclick="navigator.clipboard.writeText('${this.nostrClient.profile.lud16}')">Copy</button>
+                            ` : 'Not set'}
+                        </div>
+                        <div class="profile-row">
+                            <strong>NIP-05:</strong> ${this.nostrClient.profile.nip05 || 'Not set'}
+                        </div>
+                    </div>
+                `;
+
+                // Pre-fill form with existing data
+                document.getElementById('profile-name').value = this.nostrClient.profile.name || '';
+                document.getElementById('profile-about').value = cleanAbout || '';
+                document.getElementById('profile-nano').value = nanoAddress || '';
+                document.getElementById('profile-lightning').value = this.nostrClient.profile.lud16 || '';
+
+                // If this user has a nano address, add them to knownNanoUsers
+                if (nanoAddress) {
+                    this.knownNanoUsers.add(this.nostrClient.pubkey);
+                }
+            } else {
+                console.log('No profile data available');
+                currentProfile.innerHTML = '<div class="error">No profile data available</div>';
+                // Clear the form
+                document.getElementById('profile-name').value = '';
+                document.getElementById('profile-about').value = '';
+                document.getElementById('profile-nano').value = '';
+                document.getElementById('profile-lightning').value = '';
+            }
+        } catch (error) {
+            console.error('Error loading profile:', error);
+            currentProfile.innerHTML = '<div class="error">Error loading profile: ' + error.message + '</div>';
         }
     }
 
@@ -1198,40 +1254,69 @@ class App {
 
     async updateProfile(e) {
         e.preventDefault();
-        const name = document.getElementById('profile-name').value;
-        const about = document.getElementById('profile-about').value;
-        const nanoAddress = document.getElementById('profile-nano').value;
-        const lightning = document.getElementById('profile-lightning').value;
-
-        // Validate nano address if provided
-        if (nanoAddress && !utils.validateNanoAddress(nanoAddress)) {
-            alert('Invalid Nano address format');
-            return;
-        }
-
-        // Format the about section to include nano address if provided
-        let formattedAbout = about || '';
-        if (nanoAddress) {
-            // Remove any existing Nano address
-            formattedAbout = formattedAbout.replace(/\nNano: (?:nano|xno)_[^\s]+/, '');
-            // Add the new Nano address
-            formattedAbout = formattedAbout.trim() + '\nNano: ' + nanoAddress;
-        }
-
-        // Standard Nostr metadata format
-        const profileData = {
-            name: name || '',
-            about: formattedAbout,
-            lud16: lightning || '',
-        };
+        const submitButton = e.target.querySelector('button[type="submit"]');
+        const originalText = submitButton.textContent;
 
         try {
+            // Show loading state
+            submitButton.disabled = true;
+            submitButton.textContent = 'Updating...';
+
+            const name = document.getElementById('profile-name').value.trim();
+            const about = document.getElementById('profile-about').value.trim();
+            const nanoAddress = document.getElementById('profile-nano').value.trim();
+            const lightning = document.getElementById('profile-lightning').value.trim();
+
+            // Validate nano address if provided
+            if (nanoAddress && !utils.validateNanoAddress(nanoAddress)) {
+                throw new Error('Invalid Nano address format');
+            }
+
+            // Preserve existing profile data
+            const currentProfile = { ...this.nostrClient.profile };
+
+            // Format the about section to include nano address if provided
+            let formattedAbout = about || '';
+            if (nanoAddress) {
+                // Remove any existing Nano address
+                formattedAbout = formattedAbout.replace(/\n?(?:Nano:\s*)?(?:nano|xno)_[^\s]+/, '');
+                // Add the new Nano address
+                formattedAbout = (formattedAbout.trim() + '\nNano: ' + nanoAddress).trim();
+            }
+
+            // Standard Nostr metadata format
+            const profileData = {
+                ...currentProfile, // Preserve existing fields
+                name: name || '',
+                about: formattedAbout,
+                lud16: lightning || '',
+                // Preserve other fields if they exist
+                picture: currentProfile.picture || '',
+                banner: currentProfile.banner || '',
+                nip05: currentProfile.nip05 || '',
+            };
+
+            console.log('Updating profile with:', profileData);
+
             await this.nostrClient.updateProfile(profileData);
-            alert('Profile updated successfully!');
-            this.loadProfile(); // Refresh the displayed profile
+            this.showSuccessMessage('Profile updated successfully!');
+            
+            // Force a fresh profile fetch after update
+            await this.nostrClient.fetchProfile();
+            await this.loadProfile(); // Refresh the displayed profile
+
+            // Update nano user status
+            if (nanoAddress) {
+                this.knownNanoUsers.add(this.nostrClient.pubkey);
+            }
+
         } catch (error) {
             console.error('Profile update error:', error);
-            alert('Failed to update profile. Please try again.');
+            this.showErrorMessage('Failed to update profile: ' + error.message);
+        } finally {
+            // Reset button state
+            submitButton.disabled = false;
+            submitButton.textContent = originalText;
         }
     }
 

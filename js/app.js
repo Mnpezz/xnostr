@@ -39,6 +39,9 @@ class App {
         setTimeout(() => {
             this.searchForMoreNanoUsers();
         }, 5000);
+
+        this.setupCharacterCounters();
+        this.setupDarkMode();
     }
 
     setupEventListeners() {
@@ -559,7 +562,18 @@ class App {
                     <div class="profile-info">
                         <div class="profile-header">
                             <h3>Current Profile</h3>
-                            <small class="pubkey">Pubkey: ${this.nostrClient.pubkey}</small>
+                            <div class="profile-keys">
+                                <div class="key-row">
+                                    <strong>npub:</strong>
+                                    <span class="address">${window.NostrTools.nip19.npubEncode(this.nostrClient.pubkey)}</span>
+                                    <button onclick="navigator.clipboard.writeText('${window.NostrTools.nip19.npubEncode(this.nostrClient.pubkey)}')">Copy</button>
+                                </div>
+                                <div class="key-row">
+                                    <strong>Pubkey:</strong>
+                                    <span class="address">${this.nostrClient.pubkey}</span>
+                                    <button onclick="navigator.clipboard.writeText('${this.nostrClient.pubkey}')">Copy</button>
+                                </div>
+                            </div>
                         </div>
                         <div class="profile-row">
                             <strong>Name:</strong> ${this.nostrClient.profile.name || 'Not set'}
@@ -646,8 +660,10 @@ class App {
     }
 
     async removeRelay(url) {
-        await this.nostrClient.removeRelay(url);
-        this.updateRelayList();
+        if (confirm('Are you sure you want to remove this relay?')) {
+            await this.nostrClient.removeRelay(url);
+            this.updateRelayList();
+        }
     }
 
     async fetchUserPosts(pubkey, since) {
@@ -976,6 +992,9 @@ class App {
                         <button class="action-btn like-btn ${reactions.liked ? 'active' : ''}" 
                                 onclick="app.react('${event.id}', '+')">
                             ❤️ Like (${reactions.likes})
+                        </button>
+                        <button class="action-btn share-btn" onclick="app.sharePost('${event.id}')">
+                            📤 Share
                         </button>
                     </div>
                     <div id="reply-form-${event.id}" class="reply-form" style="display: none;">
@@ -1869,6 +1888,71 @@ class App {
         } catch (error) {
             console.error('Error rendering reply:', error);
         }
+    }
+
+    setupCharacterCounters() {
+        const createPostContent = document.getElementById('create-post-content');
+        if (createPostContent) {
+            createPostContent.addEventListener('input', (e) => {
+                const count = e.target.value.length;
+                const maxLength = 280;
+                const remaining = maxLength - count;
+                
+                let counter = e.target.parentElement.querySelector('.char-counter');
+                if (!counter) {
+                    counter = document.createElement('div');
+                    counter.className = 'char-counter';
+                    e.target.parentElement.appendChild(counter);
+                }
+                
+                counter.textContent = `${remaining} characters remaining`;
+                counter.style.color = remaining < 20 ? '#dc3545' : '#666';
+            });
+        }
+    }
+
+    async sharePost(eventId) {
+        try {
+            const nostrUrl = `nostr:${eventId}`;
+            if (navigator.share) {
+                await navigator.share({
+                    title: 'Share Post',
+                    text: 'Check out this post on Nostr',
+                    url: nostrUrl
+                });
+            } else {
+                await navigator.clipboard.writeText(nostrUrl);
+                this.showSuccessMessage('Post URL copied to clipboard!');
+            }
+        } catch (error) {
+            console.error('Error sharing post:', error);
+        }
+    }
+
+    setupDarkMode() {
+        const darkMode = localStorage.getItem('darkMode') === 'true';
+        if (darkMode) {
+            document.body.classList.add('dark-mode');
+        }
+        
+        // Add button to settings tab
+        const settingsTab = document.getElementById('settings-tab');
+        const darkModeToggle = document.createElement('div');
+        darkModeToggle.className = 'dark-mode-toggle';
+        darkModeToggle.innerHTML = `
+            <label class="switch">
+                <input type="checkbox" ${darkMode ? 'checked' : ''}>
+                <span class="slider"></span>
+            </label>
+            <span>Dark Mode</span>
+        `;
+        
+        darkModeToggle.querySelector('input').addEventListener('change', (e) => {
+            document.body.classList.toggle('dark-mode', e.target.checked);
+            localStorage.setItem('darkMode', e.target.checked);
+        });
+        
+        settingsTab.appendChild(darkModeToggle);
     }
 }
 

@@ -31,8 +31,14 @@ class App {
         setInterval(() => {
             if (this.currentFeedTab === 'nano-feed') {
                 this.checkNanoUsersForUpdates();
+                this.searchForMoreNanoUsers();
             }
-        }, 45000); // Increased from 30000 to 45000
+        }, 45000);
+
+        // Add immediate check for nano users
+        setTimeout(() => {
+            this.searchForMoreNanoUsers();
+        }, 5000);
     }
 
     setupEventListeners() {
@@ -191,7 +197,7 @@ class App {
         const feed = document.getElementById('general-feed');
         
         // Show initial loading status
-        this.updateLoadingStatus('Checking for Nano-related posts...');
+        this.updateLoadingStatus('Checking for new posts...');
         
         let posts = Array.from(this.posts.values())
             .sort((a, b) => b.created_at - a.created_at);
@@ -251,19 +257,20 @@ class App {
             }
         }
 
-        if (count === 0) {
-            // Show a more informative message while loading
-            this.updateLoadingStatus('Searching for new posts... Please wait.');
-            
-            // After a short delay, if still no posts, show the no posts message
-            setTimeout(() => {
-                if (feed.children.length === 0) {
-                    feed.innerHTML = '<div class="no-posts">Still searching for posts... This might take a moment.</div>';
-                }
-            }, 3000);
+        // Only show the searching message if there are no posts at all
+        if (feed.children.length === 0) {
+            feed.innerHTML = '<div class="no-posts">Searching for posts... Please wait.</div>';
         } else {
-            this.updateLoadingStatus(`Finished processing ${count} posts from general feed`);
+            // Remove any existing "searching" message if we have posts
+            const searchingMsg = feed.querySelector('.no-posts');
+            if (searchingMsg) {
+                searchingMsg.remove();
+            }
         }
+
+        this.updateLoadingStatus(count > 0 ? 
+            `Finished processing ${count} posts from general feed` : 
+            'Monitoring for new posts...');
     }
 
     async refreshNanoFeed() {
@@ -275,7 +282,22 @@ class App {
             
             // Get all nano posts and sort by timestamp (newest first)
             let posts = Array.from(this.nanoPosts.values())
-                .filter(event => !event.tags.some(tag => tag[0] === 'e')) // Filter out replies
+                .filter(event => {
+                    // Keep the post if:
+                    // 1. Author is a known nano user
+                    if (this.knownNanoUsers.has(event.pubkey)) return true;
+                    
+                    // 2. Post contains a nano address
+                    if (this.hasNanoInContent(event.content)) return true;
+                    
+                    // 3. It's a reply to a nano post
+                    if (event.tags.some(tag => tag[0] === 'e')) {
+                        const parentId = event.tags.find(tag => tag[0] === 'e')?.[1];
+                        return this.nanoPosts.has(parentId);
+                    }
+                    
+                    return false;
+                })
                 .sort((a, b) => b.created_at - a.created_at); // Sort by timestamp, newest first
             
             this.updateLoadingStatus(`Processing ${posts.length} Nano-related posts...`);
@@ -316,6 +338,7 @@ class App {
     // Add new method to continuously search for nano users
     async searchForMoreNanoUsers() {
         try {
+            console.log('Searching for more Nano users...');
             // Look back further for profiles
             const since = Math.floor(Date.now() / 1000) - (180 * 24 * 60 * 60); // Last 180 days
             
@@ -347,20 +370,15 @@ class App {
                             } else if (event.kind === 1) {
                                 // Check post content for nano addresses
                                 hasNano = this.hasNanoInContent(event.content);
-                                
-                                // Also check authors of any replies
-                                for (const tag of event.tags) {
-                                    if (tag[0] === 'p' && !this.knownNanoUsers.has(tag[1])) {
-                                        const profile = await this.nostrClient.getProfileForPubkey(tag[1]);
-                                        if (profile && this.hasNanoInProfile(profile)) {
-                                            await this.addNanoUser(tag[1]);
-                                        }
-                                    }
-                                }
                             }
 
                             if (hasNano) {
+                                console.log('Found new Nano user:', event.pubkey);
                                 await this.addNanoUser(event.pubkey);
+                                // Trigger feed refresh when new nano user is found
+                                if (this.currentFeedTab === 'nano-feed') {
+                                    await this.checkForNewNanoPosts();
+                                }
                             }
                         } catch (error) {
                             console.error('Error processing potential nano user:', error);
@@ -1129,17 +1147,34 @@ class App {
             if (this.knownNanoUsers.has(this.nostrClient.pubkey)) {
                 this.nanoPosts.set(publishedEvent.id, publishedEvent);
                 if (this.currentFeedTab === 'nano-feed') {
-                    await this.renderEvent(publishedEvent, true);
+                    // Render at the top of the feed
+                    const feed = document.getElementById('nano-feed');
+                    const tempDiv = document.createElement('div');
+                    await this.renderEvent(publishedEvent, true, tempDiv);
+                    feed.insertBefore(tempDiv.firstChild, feed.firstChild);
+                    this.feedState.renderedPosts.add(publishedEvent.id);
                 }
             } else {
                 this.posts.set(publishedEvent.id, publishedEvent);
                 if (this.currentFeedTab === 'general-feed') {
-                    await this.renderEvent(publishedEvent, false);
+                    // Render at the top of the feed
+                    const feed = document.getElementById('general-feed');
+                    const tempDiv = document.createElement('div');
+                    await this.renderEvent(publishedEvent, false, tempDiv);
+                    feed.insertBefore(tempDiv.firstChild, feed.firstChild);
+                    this.feedState.renderedPosts.add(publishedEvent.id);
                 }
             }
 
             textarea.value = '';
             this.showSuccessMessage('Post created successfully!');
+            
+            // Trigger a feed refresh after posting
+            if (this.currentFeedTab === 'nano-feed') {
+                await this.checkForNewNanoPosts();
+            } else {
+                await this.checkForNewGeneralPosts();
+            }
             
         } catch (error) {
             this.showErrorMessage('Failed to create post: ' + error.message);
@@ -1319,24 +1354,26 @@ class App {
     async loadReplies(eventId) {
         const repliesDiv = document.getElementById(`replies-${eventId}`);
         if (!repliesDiv) {
-            console.log('Skipping replies for event:', eventId);
+            console.log('Creating replies container for event:', eventId);
+            const post = document.getElementById(`post-${eventId}`);
+            if (post) {
+                const newRepliesDiv = document.createElement('div');
+                newRepliesDiv.id = `replies-${eventId}`;
+                newRepliesDiv.className = 'replies';
+                post.appendChild(newRepliesDiv);
+                return this.loadReplies(eventId);
+            }
             return;
         }
 
         try {
             const replies = await this.nostrClient.getReplies(eventId);
-            if (!document.getElementById(`replies-${eventId}`)) {
-                console.log('Replies container was removed while loading');
-                return;
-            }
-            
-            // Clear existing replies
-            repliesDiv.innerHTML = '';
+            repliesDiv.innerHTML = ''; // Clear existing replies
             
             // Create a Map to store unique replies by ID
             const uniqueReplies = new Map();
             
-            // Process each reply, keeping only the latest version if duplicates exist
+            // Process each reply, keeping only the latest version
             for (const reply of replies) {
                 const existingReply = uniqueReplies.get(reply.id);
                 if (!existingReply || existingReply.created_at < reply.created_at) {
@@ -1348,61 +1385,13 @@ class App {
             const sortedReplies = Array.from(uniqueReplies.values())
                 .sort((a, b) => a.created_at - b.created_at);
             
-            // Render each unique reply
             for (const reply of sortedReplies) {
-                // Verify this is a direct reply to our post
-                const parentId = reply.tags.find(tag => tag[0] === 'e')?.[1];
-                if (parentId !== eventId) continue;
-
-                try {
-                    const authorProfile = await this.getProfileForPubkey(reply.pubkey);
-                    const paymentButtons = this.createPaymentButtons(authorProfile, reply.pubkey);
-                    const reactions = await this.nostrClient.getReactions(reply.id);
-                    const repostCount = await this.nostrClient.getRepostCount(reply.id);
-                    const repliesCount = await this.nostrClient.getRepliesCount(reply.id);
-
-                    // Create reply element
-                    const replyDiv = document.createElement('div');
-                    replyDiv.className = 'reply';
-                    replyDiv.id = `reply-${reply.id}`;
-                    replyDiv.innerHTML = `
-                        <p class="reply-content">${reply.content}</p>
-                        <p class="reply-meta">Reply by ${authorProfile?.name || reply.pubkey.slice(0, 8)}... on ${utils.formatDate(reply.created_at)}</p>
-                        ${paymentButtons}
-                        <div class="reply-actions">
-                            <button class="action-btn reply-btn" onclick="app.showReplyForm('${reply.id}')">
-                                💬 Reply (${repliesCount})
-                            </button>
-                            <button class="action-btn repost-btn ${reactions.reposted ? 'active' : ''}" 
-                                    onclick="app.repost('${reply.id}')">
-                                🔁 Boost (${repostCount})
-                            </button>
-                            <button class="action-btn like-btn ${reactions.liked ? 'active' : ''}" 
-                                    onclick="app.react('${reply.id}', '+')">
-                                ❤️ Like (${reactions.likes})
-                            </button>
-                        </div>
-                        <div id="reply-form-${reply.id}" class="reply-form" style="display: none;">
-                            <textarea placeholder="Write your reply..."></textarea>
-                            <button onclick="app.submitReply('${reply.id}')">Send Reply</button>
-                        </div>
-                        <div id="replies-${reply.id}" class="nested-replies"></div>
-                    `;
-                    repliesDiv.appendChild(replyDiv);
-
-                    // Load nested replies if any exist
-                    if (repliesCount > 0) {
-                        await this.loadReplies(reply.id);
-                    }
-                } catch (error) {
-                    console.error('Error rendering reply:', error);
-                }
+                await this.renderReply(reply, repliesDiv);
             }
+        
         } catch (error) {
             console.error('Error loading replies:', error);
-            if (repliesDiv) {
-                repliesDiv.innerHTML = '<p class="error">Error loading replies</p>';
-            }
+            repliesDiv.innerHTML = '<p class="error">Error loading replies</p>';
         }
     }
 
@@ -1726,6 +1715,52 @@ class App {
             this.updateLoadingStatus('Monitoring for new posts...');
         } finally {
             this.feedState.isLoading = false;
+        }
+    }
+
+    async renderReply(reply, container) {
+        try {
+            const authorProfile = await this.getProfileForPubkey(reply.pubkey);
+            const paymentButtons = this.createPaymentButtons(authorProfile, reply.pubkey);
+            const reactions = await this.nostrClient.getReactions(reply.id);
+            const repostCount = await this.nostrClient.getRepostCount(reply.id);
+            const repliesCount = await this.nostrClient.getRepliesCount(reply.id);
+
+            const replyDiv = document.createElement('div');
+            replyDiv.className = 'reply';
+            replyDiv.id = `reply-${reply.id}`;
+            replyDiv.innerHTML = `
+                <p class="reply-content">${reply.content}</p>
+                <p class="reply-meta">Reply by ${authorProfile?.name || reply.pubkey.slice(0, 8)}... on ${utils.formatDate(reply.created_at)}</p>
+                ${paymentButtons}
+                <div class="reply-actions">
+                    <button class="action-btn reply-btn" onclick="app.showReplyForm('${reply.id}')">
+                        💬 Reply (${repliesCount})
+                    </button>
+                    <button class="action-btn repost-btn ${reactions.reposted ? 'active' : ''}" 
+                            onclick="app.repost('${reply.id}')">
+                        🔁 Boost (${repostCount})
+                    </button>
+                    <button class="action-btn like-btn ${reactions.liked ? 'active' : ''}" 
+                            onclick="app.react('${reply.id}', '+')">
+                        ❤️ Like (${reactions.likes})
+                    </button>
+                </div>
+                <div id="reply-form-${reply.id}" class="reply-form" style="display: none;">
+                    <textarea placeholder="Write your reply..."></textarea>
+                    <button onclick="app.submitReply('${reply.id}')">Send Reply</button>
+                </div>
+                <div id="replies-${reply.id}" class="nested-replies"></div>
+            `;
+            
+            container.appendChild(replyDiv);
+
+            // Load nested replies if any exist
+            if (repliesCount > 0) {
+                await this.loadReplies(reply.id);
+            }
+        } catch (error) {
+            console.error('Error rendering reply:', error);
         }
     }
 }

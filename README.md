@@ -1,57 +1,107 @@
-# Nostr Nano Client
+# xnostr - Nano-Focused Nostr Client
 
-A specialized Nostr client focused on the Nano cryptocurrency community. This client allows users to view posts from Nostr users who have Nano addresses in their profiles, send Nano tips, and interact with Lightning Network through Zaps.
+A specialized Nostr client focused on the Nano cryptocurrency community. xnostr allows users to view posts from Nostr users who have Nano addresses in their profiles, send Nano tips, and interact with Lightning Network through Zaps.
 
-Please give everything 5 seconds to load. Nostr seems to take a few seconds to load everything up. after every click.. wait. Please be patient. Thank you. 
 Live at https://mnpezz.github.io/xnostr/
 
 ## Features
 
+### Core Features
+- **Specialized Nano Feed**: 
+  - Automatically detects and displays posts from users with Nano addresses
+  - Real-time feed updates
+  - Smart filtering of Nano-related content
+
 - **Dual Feed System**: 
-  - General Feed: View all Nostr posts
-  - Nano Feed: View posts only from users with Nano addresses in their profiles
+  - Nano Feed: Focused view of Nano-related posts
+  - General Feed: Standard Nostr timeline
+
+### Payment Integration
+- **Nano Tips**:
+  - Direct Nano tipping through nano.to
+  - Automatic Nano address detection
+  - Seamless payment experience
+
+- **Lightning Network**:
+  - Zap support through Alby
+  - Lightning address integration
+  - Quick tipping functionality
+
+### User Experience
 - **Profile Management**:
-  - Set your display name
-  - Add your Nano address (required for posts to appear in Nano feed)
-  - Add your Lightning address
-  - View and edit your profile details
-- **Payment Options**:
-  - Send Nano tips directly through nano.to
-  - Send Lightning Zaps through Alby
+  - Easy Nano address integration
+  - Lightning address setup
+  - Profile customization options
+
+- **Interactive Features**:
+  - Threaded conversations
+  - Reply support
+  - Post likes and boosts
+  - Real-time notifications
+
+- **Interface**:
+  - Mobile-responsive design
+  - Clean, intuitive layout
+  - Easy navigation between feeds
+
+### Technical Features
+- **Multiple Login Options**:
+  - Alby extension support
+  - nsec private key login
+  - Secure authentication
+
 - **Relay Management**:
-  - Add and remove relays
-  - View active relay connections
-  - Persistent relay settings
+  - Custom relay configuration
+  - Automatic relay discovery
+  - Connection status monitoring
 
 ## Getting Started
 
-1. **Add Your Nano Address**:
-   - Go to the Profile tab
-   - Add your Nano address in the profile form
-   - Your posts will now appear in the Nano feed
+### For New Users
+1. If you're new to Nostr, we recommend:
+   - First creating an account on [iris.to](https://iris.to)
+   - Getting familiar with Nostr basics
+   - Then returning to xnostr with your nsec key
 
-2. **View Nano-Related Content**:
-   - Switch to the "Nano Feed" tab
-   - See posts from other users who have added their Nano addresses
+### For Existing Nostr Users
+1. **Connect to xnostr**:
+   - Desktop: Use Alby extension
+   - Mobile: Login with nsec key
 
-3. **Send Tips**:
-   - Click "🥦 Nano Tip" to send Nano through nano.to
-   - Click "⚡ Zap" to send sats through Lightning Network
+2. **Add Your Nano Address**:
+   - Go to Profile tab
+   - Add your Nano address
+   - Save changes
+
+3. **Start Interacting**:
+   - View Nano-related posts
+   - Send tips
+   - Engage with the community
 
 ## Prerequisites
 
-- A modern web browser
-- [Alby Extension](https://getalby.com/) for desktop Lightning Network interactions
-- A Nano wallet for sending tips
-- Your nsec key for mobile login (optional)
+- Modern web browser
+- For desktop:
+  - [Alby Extension](https://getalby.com/) for Lightning Network
+- For mobile:
+  - Your nsec key
+- Nano wallet for sending tips
 
 ## Technical Details
 
 - Built with vanilla JavaScript
 - Uses nostr-tools library
-- Implements NIP-01 (Basic Protocol Flow)
-- Implements NIP-57 (Lightning Zaps)
-- Custom implementation for Nano tipping
+- Implements:
+  - NIP-01 (Basic Protocol Flow)
+  - NIP-57 (Lightning Zaps)
+  - Custom Nano tipping integration
+
+## Security
+
+- Never shares or stores private keys
+- Client-side only operation
+- Secure connection handling
+- Private key input protection
 
 ## Contributing
 
@@ -66,3 +116,8 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Nostr Protocol](https://github.com/nostr-protocol/nips)
 - [nano.to](https://nano.to) for Nano payments
 - [Alby](https://getalby.com) for Lightning Network integration
+- [iris.to](https://iris.to) for Nostr onboarding
+
+## Support
+
+For support, issues, or feature requests, please open an issue on GitHub.

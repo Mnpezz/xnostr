@@ -2086,6 +2086,43 @@ class App {
         
         return postsAdded;
     }
+
+    // Add this method to the App class
+    async submitReply(eventId) {
+        const replyForm = document.getElementById(`reply-form-${eventId}`);
+        const textarea = replyForm.querySelector('textarea');
+        const content = textarea.value.trim();
+        const submitButton = replyForm.querySelector('button');
+
+        if (!content) return;
+
+        try {
+            // Show loading state
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<span class="spinner"></span> Sending...';
+
+            // Create and publish the reply
+            const reply = await this.nostrClient.createReply(eventId, content);
+            
+            // Clear the form
+            textarea.value = '';
+            
+            // Hide the reply form
+            replyForm.style.display = 'none';
+
+            // Refresh the replies for this post
+            await this.loadReplies(eventId);
+
+            this.showSuccessMessage('Reply posted successfully!');
+        } catch (error) {
+            console.error('Error posting reply:', error);
+            this.showErrorMessage('Failed to post reply: ' + error.message);
+        } finally {
+            // Reset button state
+            submitButton.disabled = false;
+            submitButton.textContent = 'Send Reply';
+        }
+    }
 }
 
 const app = new App();

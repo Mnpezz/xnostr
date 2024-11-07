@@ -105,7 +105,7 @@ class App {
         }
     }
 
-    switchTab(tabId) {
+    async switchTab(tabId) {
         // Update active button
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.tab === tabId);
@@ -121,26 +121,25 @@ class App {
             this.currentFeedTab = 'general-feed';
             const generalFeed = document.getElementById('general-feed');
             
+            // Start loading new posts in background
+            this.checkForNewGeneralPosts();
+            
             // Only refresh if empty
             if (!generalFeed.querySelector('.post')) {
                 this.updateLoadingStatus('Loading general feed...');
-                this.refreshGeneralFeed();
-            } else {
-                // Just check for new posts without clearing
-                this.updateLoadingStatus('Checking for new posts...');
-                this.checkForNewGeneralPosts();
+                await this.refreshGeneralFeed();
             }
         } else if (tabId === 'nano-feed-tab') {
             this.currentFeedTab = 'nano-feed';
             const nanoFeed = document.getElementById('nano-feed');
             
+            // Start loading new posts in background
+            this.checkForNewNanoPosts();
+            
             // Only refresh if empty
             if (!nanoFeed.querySelector('.post')) {
                 this.updateLoadingStatus('Loading Nano-related posts...');
-                this.refreshNanoFeed();
-            } else {
-                this.updateLoadingStatus('Checking for new Nano content...');
-                this.checkForNewNanoPosts();
+                await this.refreshNanoFeed();
             }
         }
     }
@@ -282,57 +281,75 @@ class App {
         
         try {
             const feed = document.getElementById('nano-feed');
+            console.log('Refreshing nano feed, current posts:', this.nostrClient.nanoPosts.size);
             
-            // Get all nano posts and sort by timestamp (newest first)
-            let posts = Array.from(this.nanoPosts.values())
-                .filter(event => {
-                    // Keep the post if:
-                    // 1. Author is a known nano user
-                    if (this.knownNanoUsers.has(event.pubkey)) return true;
-                    
-                    // 2. Post contains a nano address
-                    if (this.hasNanoInContent(event.content)) return true;
-                    
-                    // 3. It's a reply to a nano post
-                    if (event.tags.some(tag => tag[0] === 'e')) {
-                        const parentId = event.tags.find(tag => tag[0] === 'e')?.[1];
-                        return this.nanoPosts.has(parentId);
+            // Get all posts and sort by timestamp
+            let posts = Array.from(this.nostrClient.nanoPosts.values())
+                .filter(event => !event.tags.some(tag => tag[0] === 'e')) // Skip replies
+                .sort((a, b) => b.created_at - a.created_at); // Newest first
+            
+            console.log(`Processing ${posts.length} nano posts...`);
+            
+            // Get existing post IDs and their elements
+            const existingPosts = new Map(
+                Array.from(feed.querySelectorAll('.post'))
+                    .map(post => [post.id.replace('post-', ''), post])
+            );
+
+            // Process posts in batches
+            const batchSize = 10;
+            for (let i = 0; i < posts.length && i < this.initialLoadLimit; i += batchSize) {
+                const batch = posts.slice(i, i + batchSize);
+                await Promise.all(batch.map(async (event) => {
+                    try {
+                        const existingPost = existingPosts.get(event.id);
+                        if (existingPost) {
+                            // Update existing post
+                            const tempDiv = document.createElement('div');
+                            await this.renderEvent(event, true, tempDiv);
+                            if (tempDiv.firstChild) {
+                                existingPost.innerHTML = tempDiv.firstChild.innerHTML;
+                            }
+                        } else {
+                            // Add new post at the correct position
+                            const tempDiv = document.createElement('div');
+                            await this.renderEvent(event, true, tempDiv);
+                            
+                            // Find the right position to insert
+                            let insertBefore = null;
+                            for (const post of feed.children) {
+                                const postTimestamp = parseInt(post.dataset.timestamp);
+                                if (event.created_at > postTimestamp) {
+                                    insertBefore = post;
+                                    break;
+                                }
+                            }
+                            
+                            if (insertBefore) {
+                                feed.insertBefore(tempDiv.firstChild, insertBefore);
+                            } else {
+                                feed.appendChild(tempDiv.firstChild);
+                            }
+                        }
+                        this.feedState.renderedPosts.add(event.id);
+                    } catch (error) {
+                        console.error('Error rendering post:', error);
                     }
-                    
-                    return false;
-                })
-                .sort((a, b) => b.created_at - a.created_at); // Sort by timestamp, newest first
-            
-            this.updateLoadingStatus(`Processing ${posts.length} Nano-related posts...`);
-            
-            // Clear existing feed to prevent duplicates
-            feed.innerHTML = '';
-            this.feedState.renderedPosts.clear(); // Clear rendered posts tracking
-            
-            // Render posts in batches
-            const batchSize = this.feedState.batchSize.nano;
-            let count = 0;
-            
-            for (const event of posts) {
-                if (count >= this.initialLoadLimit) break;
+                }));
                 
-                await this.renderEvent(event, true);
-                this.feedState.renderedPosts.add(event.id);
-                await this.loadReplies(event.id);
-                
-                count++;
-                
-                // Add small delay between renders to prevent UI freezing
-                if (count % 5 === 0) {
+                // Small delay between batches
+                if (i + batchSize < posts.length) {
                     await new Promise(resolve => setTimeout(resolve, 50));
                 }
             }
 
             if (feed.children.length === 0) {
-                feed.innerHTML = '<div class="no-posts">Searching for Nano-related posts...</div>';
+                feed.innerHTML = '<div class="no-posts">No Nano-related posts found yet...</div>';
             } else {
-                this.updateLoadingStatus(`Monitoring for new Nano content...`);
+                this.updateLoadingStatus(`Showing ${feed.children.length} Nano-related posts`);
             }
+        } catch (error) {
+            console.error('Error in refreshNanoFeed:', error);
         } finally {
             this.feedState.isLoading = false;
         }
@@ -529,11 +546,12 @@ class App {
             await this.nostrClient.fetchProfile();
             
             if (this.nostrClient.profile) {
+                const profile = this.nostrClient.profile;
+                
                 // Extract nano address using multiple patterns
-                const about = this.nostrClient.profile.about || '';
+                const about = profile.about || '';
                 let nanoAddress = '';
                 
-                // Check multiple possible formats
                 const nanoPatterns = [
                     /(?:Nano:\s*)((?:nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59})/i,
                     /((?:nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59})/i
@@ -547,74 +565,73 @@ class App {
                     }
                 }
                 
-                // Clean the about text by removing the nano address
+                // Clean the about text
                 const cleanAbout = about.replace(/\n?(?:Nano:\s*)?(?:nano|xno)_[13][13456789abcdefghijkmnopqrstuwxyz]{59}/i, '').trim();
 
-                console.log('Parsed profile data:', {
-                    name: this.nostrClient.profile.name,
-                    about: cleanAbout,
-                    nanoAddress: nanoAddress,
-                    lightning: this.nostrClient.profile.lud16
-                });
-
-                // Display current profile
+                // Create profile HTML with banner and picture
                 currentProfile.innerHTML = `
+                    ${profile.banner ? `
+                        <div class="profile-banner">
+                            <img src="${profile.banner}" alt="Profile Banner" onerror="this.style.display='none'">
+                        </div>
+                    ` : ''}
                     <div class="profile-info">
                         <div class="profile-header">
-                            <h3>Current Profile</h3>
-                            <div class="profile-keys">
-                                <div class="key-row">
-                                    <strong>npub:</strong>
-                                    <span class="address">${window.NostrTools.nip19.npubEncode(this.nostrClient.pubkey)}</span>
-                                    <button onclick="navigator.clipboard.writeText('${window.NostrTools.nip19.npubEncode(this.nostrClient.pubkey)}')">Copy</button>
-                                </div>
-                                <div class="key-row">
-                                    <strong>Pubkey:</strong>
-                                    <span class="address">${this.nostrClient.pubkey}</span>
-                                    <button onclick="navigator.clipboard.writeText('${this.nostrClient.pubkey}')">Copy</button>
-                                </div>
+                            ${profile.picture ? `
+                                <img src="${profile.picture}" class="profile-picture" alt="Profile Picture" onerror="this.src='default-avatar.png'">
+                            ` : '<div class="profile-picture-placeholder"></div>'}
+                            <div class="profile-name-info">
+                                <h3>${profile.name || 'Unnamed'}</h3>
+                                ${profile.nip05 ? `<span class="nip05"> ${profile.nip05}</span>` : ''}
                             </div>
                         </div>
-                        <div class="profile-row">
-                            <strong>Name:</strong> ${this.nostrClient.profile.name || 'Not set'}
+                        <div class="profile-keys">
+                            <div class="key-row">
+                                <strong>npub:</strong>
+                                <span class="address">${window.NostrTools.nip19.npubEncode(this.nostrClient.pubkey)}</span>
+                                <button onclick="navigator.clipboard.writeText('${window.NostrTools.nip19.npubEncode(this.nostrClient.pubkey)}')">Copy</button>
+                            </div>
+                            <div class="key-row">
+                                <strong>Pubkey:</strong>
+                                <span class="address">${this.nostrClient.pubkey}</span>
+                                <button onclick="navigator.clipboard.writeText('${this.nostrClient.pubkey}')">Copy</button>
+                            </div>
                         </div>
-                        <div class="profile-row">
-                            <strong>About:</strong> ${cleanAbout || 'Not set'}
-                        </div>
-                        <div class="profile-row">
-                            <strong>Nano Address:</strong> 
-                            ${nanoAddress ? `
-                                <span class="address">${nanoAddress}</span>
-                                <button onclick="navigator.clipboard.writeText('${nanoAddress}')">Copy</button>
-                            ` : 'Not set'}
-                        </div>
-                        <div class="profile-row">
-                            <strong>Lightning:</strong>
-                            ${this.nostrClient.profile.lud16 ? `
-                                <span class="address">${this.nostrClient.profile.lud16}</span>
-                                <button onclick="navigator.clipboard.writeText('${this.nostrClient.profile.lud16}')">Copy</button>
-                            ` : 'Not set'}
-                        </div>
-                        <div class="profile-row">
-                            <strong>NIP-05:</strong> ${this.nostrClient.profile.nip05 || 'Not set'}
+                        <div class="profile-details">
+                            <div class="profile-row">
+                                <strong>About:</strong> ${cleanAbout || 'Not set'}
+                            </div>
+                            <div class="profile-row">
+                                <strong>Nano Address:</strong> 
+                                ${nanoAddress ? `
+                                    <span class="address">${nanoAddress}</span>
+                                    <button onclick="navigator.clipboard.writeText('${nanoAddress}')">Copy</button>
+                                ` : 'Not set'}
+                            </div>
+                            <div class="profile-row">
+                                <strong>Lightning:</strong>
+                                ${profile.lud16 ? `
+                                    <span class="address">${profile.lud16}</span>
+                                    <button onclick="navigator.clipboard.writeText('${profile.lud16}')">Copy</button>
+                                ` : 'Not set'}
+                            </div>
                         </div>
                     </div>
                 `;
 
-                // Pre-fill form with existing data
-                document.getElementById('profile-name').value = this.nostrClient.profile.name || '';
+                // Pre-fill form
+                document.getElementById('profile-name').value = profile.name || '';
                 document.getElementById('profile-about').value = cleanAbout || '';
                 document.getElementById('profile-nano').value = nanoAddress || '';
-                document.getElementById('profile-lightning').value = this.nostrClient.profile.lud16 || '';
+                document.getElementById('profile-lightning').value = profile.lud16 || '';
 
-                // If this user has a nano address, add them to knownNanoUsers
+                // Add to knownNanoUsers if has nano address
                 if (nanoAddress) {
                     this.knownNanoUsers.add(this.nostrClient.pubkey);
                 }
             } else {
-                console.log('No profile data available');
                 currentProfile.innerHTML = '<div class="error">No profile data available</div>';
-                // Clear the form
+                // Clear form
                 document.getElementById('profile-name').value = '';
                 document.getElementById('profile-about').value = '';
                 document.getElementById('profile-nano').value = '';
@@ -672,27 +689,37 @@ class App {
             kinds: [1],
             authors: [pubkey],
             since: since,
-            limit: 50  // Reduced from 200 to get initial content faster
+            limit: 100  // Increased from 50
         };
 
         console.log(`Fetching posts for Nano user: ${pubkey}`);
         
         let postsLoaded = 0;
-        const maxPosts = 100; // Cap total posts per user
+        const maxPosts = 200; // Increased from 100
         
         for (const relay of Object.values(this.nostrClient.relays)) {
             try {
                 if (postsLoaded >= maxPosts) break;
                 
+                console.log(`Querying ${relay.url} for posts from ${pubkey}...`);
                 const events = await this.nostrClient.queryRelay(relay, filter);
+                console.log(`Got ${events.length} events from ${relay.url}`);
+                
                 for (const event of events) {
                     if (postsLoaded >= maxPosts) break;
+                    
+                    // Skip replies for now
+                    if (event.tags.some(tag => tag[0] === 'e')) continue;
                     
                     // Only add if not already in userPosts or if this is a newer version
                     const existingPost = userPosts.get(event.id);
                     if (!existingPost || existingPost.created_at < event.created_at) {
                         userPosts.set(event.id, event);
                         postsLoaded++;
+                        
+                        // Add to nanoPosts Map immediately
+                        this.nostrClient.nanoPosts.set(event.id, event);
+                        console.log(`Added post ${event.id} to nano feed`);
                     }
                     
                     // Add small delay every 10 posts to keep UI responsive
@@ -701,128 +728,80 @@ class App {
                     }
                 }
             } catch (error) {
-                console.error('Error fetching user posts:', error);
+                console.error(`Error fetching user posts from ${relay.url}:`, error);
             }
         }
 
         const posts = Array.from(userPosts.values())
             .sort((a, b) => b.created_at - a.created_at)
-            .slice(0, maxPosts); // Ensure we don't exceed max posts
+            .slice(0, maxPosts);
 
         console.log(`Found ${posts.length} unique posts from Nano user ${pubkey}`);
+        
+        // If we found posts, make sure to refresh the feed
+        if (posts.length > 0 && this.currentFeedTab === 'nano-feed') {
+            console.log('Refreshing nano feed with new posts...');
+            await this.refreshNanoFeed();
+        }
+
         return posts;
     }
 
     async setupFeed() {
-        // Adjust time windows
-        const generalSince = Math.floor(Date.now() / 1000) - (24 * 60 * 60); // Reduced to 24 hours
-        const nanoSince = Math.floor(Date.now() / 1000) - (90 * 24 * 60 * 60);
-        
-        let pendingNanoUsers = new Set();
-
-        this.updateLoadingStatus('Connecting to Nostr network...');
-        
-        // Load smaller initial batch of general feed
-        const initialGeneralFilter = {
-            kinds: [1],
-            since: generalSince,
-            limit: 15  // Reduced initial load
-        };
-
         try {
-            // Quick load of general feed
-            this.updateLoadingStatus('Loading initial posts...');
-            for (const relay of Object.values(this.nostrClient.relays)) {
-                const events = await this.nostrClient.queryRelay(relay, initialGeneralFilter);
-                for (const event of events) {
-                    if (!event.tags.some(tag => tag[0] === 'e')) {
-                        await this.processNewPost(event, false);
-                        // Add small delay between processing posts
-                        await new Promise(resolve => setTimeout(resolve, 20));
-                    }
-                }
-            }
+            // Start both feed initializations in parallel
+            const nanoFeedPromise = this.nostrClient.initializeNanoFeed();
+            const generalFeedPromise = this.initializeGeneralFeed();
 
-            // Switch to general feed to show the loaded posts
-            document.getElementById('feed-tab').click();
-            
-            // Now start loading nano feed in parallel
-            this.updateLoadingStatus('Loading Nano-related posts in background...');
-            
-            // Check current user's nano status
-            const hasNano = await this.nostrClient.hasNanoAddress(this.nostrClient.pubkey);
-            if (hasNano) {
-                console.log('Current user has Nano address, fetching their posts...');
-                this.knownNanoUsers.add(this.nostrClient.pubkey);
-                const userPosts = await this.fetchUserPosts(this.nostrClient.pubkey, nanoSince);
-                
-                let processedCount = 0;
-                for (const post of userPosts) {
-                    if (!this.nanoPosts.has(post.id)) {
-                        this.nanoPosts.set(post.id, post);
-                        processedCount++;
-                        
-                        // Render posts as they come in if we're in nano feed
-                        if (this.currentFeedTab === 'nano-feed' && processedCount <= this.feedState.batchSize.nano) {
-                            await this.renderEvent(post, true);
-                            this.feedState.renderedPosts.add(post.id);
-                        }
-                        
-                        // Add small delay every few posts
-                        if (processedCount % 5 === 0) {
-                            await new Promise(resolve => setTimeout(resolve, 10));
-                        }
-                    }
-                }
-                
-                if (processedCount > 0) {
-                    this.updateLoadingStatus(`Loaded ${processedCount} posts from current user...`);
-                }
-            }
+            // Wait for both to complete
+            const [nanoPostCount, generalPostCount] = await Promise.all([
+                nanoFeedPromise,
+                generalFeedPromise
+            ]);
 
-            // Set up subscription for ongoing updates
+            console.log(`Initialized feeds - Nano: ${nanoPostCount} posts, General: ${generalPostCount} posts`);
+            
+            // Refresh the current feed
+            if (this.currentFeedTab === 'nano-feed') {
+                await this.refreshNanoFeed();
+            } else {
+                await this.refreshGeneralFeed();
+            }
+            
+            // Set up subscription for new posts
+            const since = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
             const filters = [
                 {
                     kinds: [1],
-                    since: generalSince,
+                    since: since,
                     limit: this.initialLoadLimit
                 }
             ];
 
             this.nostrClient.subscribe(filters, async event => {
                 try {
-                    // Skip replies - they'll be handled by their parent posts
                     const isReply = event.tags.some(tag => tag[0] === 'e');
                     if (isReply) return;
 
-                    if (!this.knownNanoUsers.has(event.pubkey) && !pendingNanoUsers.has(event.pubkey)) {
-                        pendingNanoUsers.add(event.pubkey);
+                    const hasNano = await this.nostrClient.hasNanoAddress(event.pubkey);
+                    if (hasNano) {
+                        // Add to nano posts only
+                        this.nostrClient.nanoPosts.set(event.id, event);
+                        this.knownNanoUsers.add(event.pubkey);
                         
-                        const hasNano = await this.nostrClient.hasNanoAddress(event.pubkey);
-                        if (hasNano) {
-                            this.knownNanoUsers.add(event.pubkey);
-                            
-                            // Remove user's posts from general feed
-                            for (const [id, post] of this.posts.entries()) {
-                                if (post.pubkey === event.pubkey) {
-                                    this.posts.delete(id);
-                                    this.feedState.renderedPosts.delete(id);
-                                }
-                            }
-                            
-                            // Fetch and process user's posts
-                            const userPosts = await this.fetchUserPosts(event.pubkey, nanoSince);
-                            for (const post of userPosts) {
-                                await this.processNewPost(post, true);
-                            }
-                        } else {
-                            await this.processNewPost(event, false);
+                        if (this.currentFeedTab === 'nano-feed') {
+                            await this.renderEvent(event, true);
                         }
-                        pendingNanoUsers.delete(event.pubkey);
+                    } else {
+                        // Add to general posts only
+                        this.posts.set(event.id, event);
+                        
+                        if (this.currentFeedTab === 'general-feed') {
+                            await this.renderEvent(event, false);
+                        }
                     }
                 } catch (error) {
                     console.error('Error processing event:', error);
-                    pendingNanoUsers.delete(event.pubkey);
                 }
             });
 
@@ -830,6 +809,59 @@ class App {
             console.error('Error in setupFeed:', error);
             this.showErrorMessage('Error loading feed: ' + error.message);
         }
+    }
+
+    // Add new method for general feed initialization
+    async initializeGeneralFeed() {
+        console.log('Initializing general feed...');
+        const twentyFourHoursAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+        
+        const filter = {
+            kinds: [1],
+            since: twentyFourHoursAgo,
+            limit: 100
+        };
+
+        let postCount = 0;
+        for (const relay of Object.values(this.nostrClient.relays)) {
+            try {
+                const events = await this.nostrClient.queryRelay(relay, filter);
+                for (const event of events) {
+                    // Skip replies, nano users' posts, and posts with non-English content
+                    if (!event.tags.some(tag => tag[0] === 'e') && 
+                        !this.knownNanoUsers.has(event.pubkey) &&
+                        !this.nanoPosts.has(event.id) &&
+                        this.isEnglishContent(event.content)) {
+                        this.posts.set(event.id, event);
+                        postCount++;
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching general posts:', error);
+            }
+        }
+
+        console.log(`Found ${postCount} general posts`);
+        return postCount;
+    }
+
+    // Add helper method to check content language
+    isEnglishContent(content) {
+        // Simple check for Japanese/Chinese characters
+        const hasJapaneseOrChinese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/.test(content);
+        
+        // If content has Japanese/Chinese characters, it's not for general feed
+        if (hasJapaneseOrChinese) {
+            return false;
+        }
+
+        // Check if content is mostly English
+        const words = content.split(/\s+/);
+        const englishWordPattern = /^[a-zA-Z0-9\-'.,!?]+$/;
+        const englishWords = words.filter(word => englishWordPattern.test(word));
+        
+        // If at least 60% of words are English, consider it English content
+        return englishWords.length / words.length >= 0.6;
     }
 
     async fetchHistoricalPosts() {
@@ -916,7 +948,7 @@ class App {
     async renderEvent(event, isNanoFeed = false, container = null) {
         const feedId = isNanoFeed ? 'nano-feed' : 'general-feed';
         
-        // Check if this event is already rendered
+        // Check if already rendered
         if (document.getElementById(`post-${event.id}`)) {
             return;
         }
@@ -924,125 +956,188 @@ class App {
         const feed = container || document.getElementById(feedId);
         if (!feed) return;
 
-        // Skip if this is a reply - replies will be handled by loadReplies
+        // Skip replies - handled by loadReplies
         const isReply = event.tags.some(tag => tag[0] === 'e');
-        if (isReply) {
-            const parentId = event.tags.find(tag => tag[0] === 'e')?.[1];
-            const parentPost = document.getElementById(`post-${parentId}`);
-            if (parentPost) {
-                // If parent exists, trigger a refresh of its replies
-                await this.loadReplies(parentId);
-                return;
-            }
-        }
+        if (isReply) return;
 
-        const div = document.createElement('div');
-        div.className = 'post';
-        div.id = `post-${event.id}`;
-        div.dataset.timestamp = event.created_at.toString();
+        // Create main post container
+        const postContainer = document.createElement('div');
+        postContainer.className = 'post';
+        postContainer.id = `post-${event.id}`;
+        postContainer.dataset.timestamp = event.created_at.toString();
         
         if (event.kind === 1) {
             try {
-                const authorProfile = await this.getProfileForPubkey(event.pubkey);
-                const paymentButtons = this.createPaymentButtons(authorProfile, event.pubkey);
+                // Use the same profile fetching method as loadProfile
+                let authorProfile;
+                if (event.pubkey === this.nostrClient.pubkey) {
+                    // If it's our own post, use the cached profile
+                    authorProfile = this.nostrClient.profile;
+                } else {
+                    // Otherwise fetch it like we do in loadProfile
+                    const filter = {
+                        kinds: [0],
+                        authors: [event.pubkey],
+                        limit: 5
+                    };
+
+                    for (const relay of Object.values(this.nostrClient.relays)) {
+                        const events = await this.nostrClient.queryRelay(relay, filter);
+                        if (events.length > 0) {
+                            const profileEvent = events[0];
+                            try {
+                                authorProfile = JSON.parse(profileEvent.content);
+                                break;
+                            } catch (error) {
+                                console.error('Error parsing profile:', error);
+                            }
+                        }
+                    }
+                }
+
+                console.log(`Rendering post with profile:`, authorProfile);
                 
-                // Get reaction counts
+                const paymentButtons = this.createPaymentButtons(authorProfile, event.pubkey);
                 const reactions = await this.nostrClient.getReactions(event.id);
                 const repostCount = await this.nostrClient.getRepostCount(event.id);
                 const repliesCount = await this.nostrClient.getRepliesCount(event.id);
                 
-                // Process content to render images with better error handling
-                let processedContent = event.content;
+                // Create the main post content
+                const postContent = document.createElement('div');
+                postContent.className = 'post-content';
+                
+                // Create profile header
+                const profileHeader = document.createElement('div');
+                profileHeader.className = 'post-header';
+                profileHeader.innerHTML = `
+                    ${authorProfile?.picture ? 
+                        `<img src="${authorProfile.picture}" 
+                              class="profile-picture" 
+                              onerror="this.src='default-avatar.png'">` 
+                        : '<div class="profile-picture-placeholder"></div>'
+                    }
+                    <div class="post-header-info">
+                        <span class="author-name">${authorProfile?.name || event.pubkey.slice(0, 8)}...</span>
+                        ${authorProfile?.nip05 ? `<span class="nip05">✓ ${authorProfile.nip05}</span>` : ''}
+                    </div>
+                `;
+                postContent.appendChild(profileHeader);
 
-                // Handle direct image URLs
+                // Process content for images
+                let processedContent = event.content;
                 processedContent = processedContent.replace(
                     /(https?:\/\/[^\s<]+?\.(?:jpg|jpeg|gif|png|webp))(?:\s|$)/gi,
                     (match, url) => {
-                        // Skip 4chan and other problematic domains
-                        if (url.includes('4cdn.org')) {
-                            return url; // Return as text instead of image
-                        }
                         return `<img src="${url}" class="post-image" onerror="this.style.display='none'; this.parentElement.textContent='${url}'" /><br>`;
                     }
                 );
 
-                // Handle nostr.build image URLs
-                processedContent = processedContent.replace(
-                    /@(https?:\/\/[^\s<]+?\.(?:jpg|jpeg|gif|png|webp))(?:\s|$)/gi,
-                    (match, url) => {
-                        if (url.includes('4cdn.org')) {
-                            return url;
-                        }
-                        return `<img src="${url}" class="post-image" onerror="this.style.display='none'; this.parentElement.textContent='${url}'" /><br>`;
-                    }
-                );
-
-                div.innerHTML = `
+                // Add post content
+                const contentDiv = document.createElement('div');
+                contentDiv.innerHTML = `
                     <p class="content">${processedContent}</p>
-                    <p class="meta">Posted by ${authorProfile?.name || event.pubkey.slice(0, 8)}... on ${utils.formatDate(event.created_at)}</p>
+                    <p class="meta">Posted on ${utils.formatDate(event.created_at)}</p>
                     ${paymentButtons}
-                    <div class="post-actions">
-                        <button class="action-btn reply-btn" onclick="app.showReplyForm('${event.id}')">
-                            💬 Reply (${repliesCount})
-                        </button>
-                        <button class="action-btn repost-btn ${reactions.reposted ? 'active' : ''}" 
-                                onclick="app.repost('${event.id}')">
-                            🔁 Boost (${repostCount})
-                        </button>
-                        <button class="action-btn like-btn ${reactions.liked ? 'active' : ''}" 
-                                onclick="app.react('${event.id}', '+')">
-                            ❤️ Like (${reactions.likes})
-                        </button>
-                        <button class="action-btn share-btn" onclick="app.sharePost('${event.id}')">
-                            📤 Share
-                        </button>
-                    </div>
-                    <div id="reply-form-${event.id}" class="reply-form" style="display: none;">
-                        <textarea placeholder="Write your reply..."></textarea>
-                        <button onclick="app.submitReply('${event.id}')">Send Reply</button>
-                    </div>
-                    <div id="replies-${event.id}" class="replies"></div>
                 `;
+                postContent.appendChild(contentDiv);
 
-                feed.appendChild(div);
+                // Add post actions
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'post-actions';
+                actionsDiv.innerHTML = `
+                    <button class="action-btn reply-btn ${repliesCount > 0 ? 'has-replies' : ''}" 
+                            onclick="app.showReplyForm('${event.id}')"
+                            data-replies="${repliesCount}">
+                        💬 Reply (${repliesCount})
+                    </button>
+                    <button class="action-btn repost-btn ${reactions.reposted ? 'active' : ''}" 
+                            onclick="app.repost('${event.id}')">
+                        🔁 Boost (${repostCount})
+                    </button>
+                    <button class="action-btn like-btn ${reactions.liked ? 'active' : ''}" 
+                            onclick="app.react('${event.id}', '+')">
+                        ❤️ Like (${reactions.likes})
+                    </button>
+                    <button class="action-btn share-btn" onclick="app.sharePost('${event.id}')">
+                        📤 Share
+                    </button>
+                `;
+                postContent.appendChild(actionsDiv);
 
-                // Load replies immediately after rendering the post
-                if (!isReply) {
+                // Add all content to post container
+                postContainer.appendChild(postContent);
+
+                // Create reply form container
+                const replyForm = document.createElement('div');
+                replyForm.id = `reply-form-${event.id}`;
+                replyForm.className = 'reply-form';
+                replyForm.style.display = 'none';
+                replyForm.innerHTML = `
+                    <textarea placeholder="Write your reply..."></textarea>
+                    <button onclick="app.submitReply('${event.id}')">Send Reply</button>
+                `;
+                postContainer.appendChild(replyForm);
+
+                // Create replies container
+                const repliesContainer = document.createElement('div');
+                repliesContainer.id = `replies-${event.id}`;
+                repliesContainer.className = 'replies';
+                postContainer.appendChild(repliesContainer);
+
+                // Add the post to the feed
+                feed.appendChild(postContainer);
+
+                // Load replies if there are any
+                if (repliesCount > 0) {
                     await this.loadReplies(event.id);
                 }
+
+                return postContainer;
             } catch (error) {
                 console.error('Error rendering event:', error);
-                div.innerHTML = `
+                postContainer.innerHTML = `
                     <p class="content">${event.content}</p>
                     <p class="meta">Posted by ${event.pubkey.slice(0, 8)}... on ${utils.formatDate(event.created_at)}</p>
                 `;
-                feed.appendChild(div);
+                feed.appendChild(postContainer);
+                return postContainer;
             }
         }
     }
 
     createPaymentButtons(profile, pubkey) {
+        if (!profile) return '';
+
         const buttons = [];
         
-        // Add Nano tip button if address exists
-        if (profile?.nano_address) {
+        // Check for nano address in multiple places
+        const nanoAddress = 
+            profile.nano_address || 
+            this.nostrClient.findNanoAddress(profile.about) ||
+            this.nostrClient.findNanoAddress(profile.nano) ||
+            this.nostrClient.findNanoAddress(profile.website);
+
+        if (nanoAddress) {
+            // Cache the nano address in the profile
+            profile.nano_address = nanoAddress;
+            this.nostrClient.profileCache.set(pubkey, profile);
+            
             buttons.push(`
-                <button class="tip-button nano-tip" onclick="app.sendNanoTip('${profile.nano_address}', '${profile.name || 'User'}')">
-                    🥦 Nano Tip
+                <button class="payment-btn nano-tip" onclick="app.sendNanoTip('${nanoAddress}', '${profile.name || 'User'}')">
+                    💎 Tip Nano
                 </button>
             `);
         }
-        
-        // Add Zap button if lightning address exists
-        if (profile?.lud16) {
+
+        if (profile.lud16) {
             buttons.push(`
-                <button class="tip-button zap-tip" onclick="app.sendZap('${pubkey}')">
+                <button class="payment-btn zap-tip lightning-tip" onclick="app.sendZap('${pubkey}')">
                     ⚡ Zap
                 </button>
             `);
         }
-        
-        return buttons.length ? `<div class="tip-buttons">${buttons.join('')}</div>` : '';
+
+        return buttons.length ? `<div class="payment-buttons">${buttons.join('')}</div>` : '';
     }
 
     async getProfileForPubkey(pubkey) {
@@ -1388,16 +1483,10 @@ class App {
             // Convert nsec to private key
             const privateKey = window.NostrTools.nip19.decode(nsec).data;
             
-            // Clear any existing posts and state
-            this.posts.clear();
-            this.nanoPosts.clear();
-            this.knownNanoUsers.clear();
-            this.clearFeeds();
-            
             // Initialize nostr client with private key
             await this.nostrClient.initWithPrivateKey(privateKey);
             
-            // Clear the nsec input
+            // Clear the nsec input for security
             nsecInput.value = '';
             
             // Update UI
@@ -1412,11 +1501,24 @@ class App {
                 content.classList.toggle('active', content.id === 'nano-feed-tab');
             });
 
-            // Load everything in order
+            // Load profile and setup feed
             await this.loadProfile();
-            this.updateRelayList();
             await this.setupFeed();
+            this.updateRelayList();
             
+            // Start searching for nano users
+            setTimeout(() => {
+                this.searchForMoreNanoUsers();
+            }, 5000);
+
+            // Set up periodic checks
+            setInterval(() => {
+                if (this.currentFeedTab === 'nano-feed') {
+                    this.checkNanoUsersForUpdates();
+                    this.searchForMoreNanoUsers();
+                }
+            }, 45000);
+
             this.showSuccessMessage('Successfully logged in!');
             
         } catch (error) {
@@ -1430,94 +1532,112 @@ class App {
     }
 
     async showReplyForm(eventId) {
-        const replyForm = document.getElementById(`reply-form-${eventId}`);
-        replyForm.style.display = replyForm.style.display === 'none' ? 'block' : 'none';
-    }
-
-    async submitReply(eventId) {
-        const replyForm = document.getElementById(`reply-form-${eventId}`);
-        const textarea = replyForm.querySelector('textarea');
-        const content = textarea.value;
-        const submitBtn = replyForm.querySelector('button');
+        const replyFormContainer = document.getElementById(`reply-form-${eventId}`);
+        if (!replyFormContainer) return;
         
-        if (!content) return;
-
-        try {
-            // Disable button and show posting state
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Sending...';
-            
-            // Create and publish the reply
-            const reply = await this.nostrClient.createReply(eventId, content);
-            
-            // Show success message
-            const successMsg = document.createElement('div');
-            successMsg.className = 'success-message';
-            successMsg.textContent = ' Reply sent!';
-            replyForm.appendChild(successMsg);
-            
-            // Clear textarea and hide form after a short delay
-            textarea.value = '';
-            setTimeout(() => {
-                successMsg.remove();
-                replyForm.style.display = 'none';
-            }, 2000);
-
-            // Rest of the existing reply rendering code...
-            
-        } catch (error) {
-            console.error('Failed to post reply:', error);
-            if (!error.message.includes('Cannot read properties')) {
-                alert('Failed to post reply: ' + error.message);
+        // Toggle visibility
+        const isVisible = replyFormContainer.style.display === 'block';
+        replyFormContainer.style.display = isVisible ? 'none' : 'block';
+        
+        // Load replies when showing the form
+        if (!isVisible) {
+            const repliesContainer = document.getElementById(`replies-${eventId}`);
+            if (repliesContainer) {
+                try {
+                    await this.loadReplies(eventId);
+                } catch (error) {
+                    console.error('Error loading replies:', error);
+                }
             }
-        } finally {
-            // Reset button
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Send Reply';
         }
     }
 
     async loadReplies(eventId) {
+        console.log(`Loading replies for event ${eventId}`);
         const repliesDiv = document.getElementById(`replies-${eventId}`);
+        const replyBtn = document.querySelector(`button[onclick="app.showReplyForm('${eventId}')"]`);
+        
         if (!repliesDiv) {
-            console.log('Creating replies container for event:', eventId);
-            const post = document.getElementById(`post-${eventId}`);
-            if (post) {
-                const newRepliesDiv = document.createElement('div');
-                newRepliesDiv.id = `replies-${eventId}`;
-                newRepliesDiv.className = 'replies';
-                post.appendChild(newRepliesDiv);
-                return this.loadReplies(eventId);
-            }
+            console.error(`No replies div found for event ${eventId}`);
             return;
         }
 
         try {
+            // Add loading states
+            repliesDiv.classList.add('loading');
+            if (replyBtn) {
+                replyBtn.classList.add('loading');
+                replyBtn.innerHTML = '💬 Loading...';
+            }
+
+            // Get replies from all relays
             const replies = await this.nostrClient.getReplies(eventId);
-            repliesDiv.innerHTML = ''; // Clear existing replies
-            
-            // Create a Map to store unique replies by ID
-            const uniqueReplies = new Map();
-            
-            // Process each reply, keeping only the latest version
-            for (const reply of replies) {
-                const existingReply = uniqueReplies.get(reply.id);
-                if (!existingReply || existingReply.created_at < reply.created_at) {
-                    uniqueReplies.set(reply.id, reply);
+            console.log(`Got ${replies.length} replies for event ${eventId}`);
+
+            // Add minimum loading time of 1 second for better UX
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            if (replies.length > 0) {
+                // Clear existing replies
+                repliesDiv.innerHTML = '';
+                
+                // Sort replies by timestamp
+                const sortedReplies = replies.sort((a, b) => a.created_at - b.created_at);
+                
+                // Create a map to track rendered replies
+                const renderedReplies = new Set();
+                
+                // Render replies in smaller batches for smoother loading
+                const batchSize = 3;
+                for (let i = 0; i < sortedReplies.length; i += batchSize) {
+                    const batch = sortedReplies.slice(i, i + batchSize);
+                    
+                    await Promise.all(batch.map(async reply => {
+                        // Skip if already rendered
+                        if (renderedReplies.has(reply.id)) return;
+                        
+                        // Verify this is a direct reply
+                        const isDirectReply = reply.tags.some(tag => 
+                            tag[0] === 'e' && tag[1] === eventId
+                        );
+                        
+                        if (isDirectReply) {
+                            try {
+                                await this.renderReply(reply, repliesDiv);
+                                renderedReplies.add(reply.id);
+                                repliesDiv.classList.add('has-replies');
+                            } catch (error) {
+                                console.error(`Error rendering reply ${reply.id}:`, error);
+                            }
+                        }
+                    }));
+
+                    // Small delay between batches for smoother loading
+                    if (i + batchSize < sortedReplies.length) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
                 }
             }
-            
-            // Sort replies by timestamp
-            const sortedReplies = Array.from(uniqueReplies.values())
-                .sort((a, b) => a.created_at - b.created_at);
-            
-            for (const reply of sortedReplies) {
-                await this.renderReply(reply, repliesDiv);
+
+            // Update button state after all replies are loaded
+            if (replyBtn) {
+                replyBtn.classList.remove('loading');
+                replyBtn.innerHTML = `💬 Reply (${replies.length})`;
+                replyBtn.setAttribute('data-replies', replies.length.toString());
             }
-        
+            
+            // Keep loading spinner a bit longer for better UX
+            await new Promise(resolve => setTimeout(resolve, 500));
+            repliesDiv.classList.remove('loading');
+
         } catch (error) {
-            console.error('Error loading replies:', error);
-            repliesDiv.innerHTML = '<p class="error">Error loading replies</p>';
+            console.error(`Error loading replies for ${eventId}:`, error);
+            // Reset loading states on error
+            repliesDiv.classList.remove('loading');
+            if (replyBtn) {
+                replyBtn.classList.remove('loading');
+                replyBtn.innerHTML = '💬 Reply (0)';
+            }
         }
     }
 
@@ -1734,63 +1854,24 @@ class App {
     }
 
     async checkNanoUsersForUpdates() {
-        if (this.feedState.isLoading) return;
+        console.log(`Checking ${this.knownNanoUsers.size} nano users for updates...`);
+        const since = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
         
-        try {
-            const since = Math.floor(Date.now() / 1000) - (60 * 60); // Last hour
-            const filter = {
-                kinds: [1], // Posts
-                authors: Array.from(this.knownNanoUsers),
-                since: since
-            };
-
-            console.log(`Checking ${this.knownNanoUsers.size} nano users for updates...`);
-
-            for (const relay of Object.values(this.nostrClient.relays)) {
-                try {
-                    const events = await this.nostrClient.queryRelay(relay, filter);
-                    let newPosts = 0;
-                    let updatedReplies = 0;
-
-                    for (const event of events) {
-                        const isReply = event.tags.some(tag => tag[0] === 'e');
-                        const existingPost = this.nanoPosts.get(event.id);
-
-                        if (!existingPost || existingPost.created_at < event.created_at) {
-                            this.nanoPosts.set(event.id, event);
-                            
-                            if (isReply) {
-                                // If it's a reply, refresh the parent post's replies
-                                const parentId = event.tags.find(tag => tag[0] === 'e')?.[1];
-                                if (parentId && document.getElementById(`post-${parentId}`)) {
-                                    await this.loadReplies(parentId);
-                                    updatedReplies++;
-                                }
-                            } else if (!this.feedState.renderedPosts.has(event.id)) {
-                                // If it's a new main post, render it at the top of the feed
-                                if (this.currentFeedTab === 'nano-feed') {
-                                    const tempDiv = document.createElement('div');
-                                    await this.renderEvent(event, true, tempDiv);
-                                    const feed = document.getElementById('nano-feed');
-                                    feed.insertBefore(tempDiv.firstChild, feed.firstChild);
-                                    this.feedState.renderedPosts.add(event.id);
-                                }
-                                newPosts++;
-                            }
-                        }
+        for (const pubkey of this.knownNanoUsers) {
+            try {
+                console.log(`Checking for updates from nano user: ${pubkey}`);
+                const posts = await this.fetchUserPosts(pubkey, since);
+                
+                if (posts.length > 0) {
+                    console.log(`Found ${posts.length} new posts from ${pubkey}`);
+                    // Force a feed refresh if we're on the nano feed
+                    if (this.currentFeedTab === 'nano-feed') {
+                        await this.refreshNanoFeed();
                     }
-
-                    if (newPosts > 0 || updatedReplies > 0) {
-                        this.updateLoadingStatus(
-                            `Found ${newPosts} new posts and ${updatedReplies} updated replies from Nano users`
-                        );
-                    }
-                } catch (error) {
-                    console.error('Error checking relay for nano user updates:', error);
                 }
+            } catch (error) {
+                console.error(`Error checking updates for ${pubkey}:`, error);
             }
-        } catch (error) {
-            console.error('Error in checkNanoUsersForUpdates:', error);
         }
     }
 
@@ -1846,7 +1927,7 @@ class App {
 
     async renderReply(reply, container) {
         try {
-            const authorProfile = await this.getProfileForPubkey(reply.pubkey);
+            const authorProfile = await this.nostrClient.getProfileForPubkey(reply.pubkey);
             const paymentButtons = this.createPaymentButtons(authorProfile, reply.pubkey);
             const reactions = await this.nostrClient.getReactions(reply.id);
             const repostCount = await this.nostrClient.getRepostCount(reply.id);
@@ -1856,8 +1937,20 @@ class App {
             replyDiv.className = 'reply';
             replyDiv.id = `reply-${reply.id}`;
             replyDiv.innerHTML = `
+                <div class="reply-header">
+                    ${authorProfile?.picture ? `
+                        <img src="${this.nostrClient.sanitizeImageUrl(authorProfile.picture)}" 
+                             class="profile-picture" 
+                             onerror="this.src='default-avatar.png'; console.log('Failed to load image for ${reply.pubkey}');">` 
+                        : '<div class="profile-picture-placeholder"></div>'
+                    }
+                    <div class="reply-header-info">
+                        <span class="author-name">${authorProfile?.name || reply.pubkey.slice(0, 8)}...</span>
+                        ${authorProfile?.nip05 ? `<span class="nip05">✓ ${authorProfile.nip05}</span>` : ''}
+                    </div>
+                </div>
                 <p class="reply-content">${reply.content}</p>
-                <p class="reply-meta">Reply by ${authorProfile?.name || reply.pubkey.slice(0, 8)}... on ${utils.formatDate(reply.created_at)}</p>
+                <p class="reply-meta">Posted on ${utils.formatDate(reply.created_at)}</p>
                 ${paymentButtons}
                 <div class="reply-actions">
                     <button class="action-btn reply-btn" onclick="app.showReplyForm('${reply.id}')">
@@ -1953,6 +2046,45 @@ class App {
         });
         
         settingsTab.appendChild(darkModeToggle);
+    }
+
+    async addUserToNanoFeed(pubkey, since) {
+        console.log(`Fetching posts for nano user: ${pubkey}`);
+        const filter = {
+            kinds: [1],
+            authors: [pubkey],
+            since: since,
+            limit: 100
+        };
+
+        let postsAdded = 0;
+        for (const relay of Object.values(this.nostrClient.relays)) {
+            try {
+                const events = await this.nostrClient.queryRelay(relay, filter);
+                console.log(`Found ${events.length} posts from ${relay.url}`);
+                
+                for (const event of events) {
+                    // Skip replies
+                    if (!event.tags.some(tag => tag[0] === 'e')) {
+                        this.nostrClient.nanoPosts.set(event.id, event);
+                        postsAdded++;
+                        console.log(`Added post ${event.id} to nano feed (${postsAdded} total)`);
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching posts:', error);
+            }
+        }
+        
+        console.log(`Added ${postsAdded} posts from nano user ${pubkey}`);
+        
+        // Force a feed refresh if we're on the nano feed
+        if (postsAdded > 0 && this.currentFeedTab === 'nano-feed') {
+            console.log('Triggering nano feed refresh...');
+            await this.refreshNanoFeed();
+        }
+        
+        return postsAdded;
     }
 }
 

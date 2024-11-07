@@ -134,6 +134,14 @@ Live at https://mnpezz.github.io/xnostr/
 - Automatically saves preference
 - Improves readability in low-light conditions
 
+### Post Interaction
+- Click the reply button (💬) to open the reply form
+- Type your reply in the text area
+- Click "Send Reply" to post your response
+- Replies are shown threaded under the original post
+- Reply counts show the number of responses
+- Replies are loaded dynamically when viewing a thread
+
 ## Prerequisites
 
 - Modern web browser

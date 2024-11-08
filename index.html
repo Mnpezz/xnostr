@@ -52,11 +52,51 @@
 
                     <div class="login-option">
                         <h4>Option 2: Login with Private Key</h4>
-                        <input type="password" id="nsec-input" placeholder="Enter your nsec..." class="nsec-input">
-                        <button id="nsec-login-btn" class="secondary-btn">Login with nsec</button>
+                        <div class="nsec-controls">
+                            <div class="nsec-input-group">
+                                <input type="password" id="nsec-input" placeholder="Enter your nsec..." class="nsec-input">
+                                <button class="toggle-nsec" onclick="this.previousElementSibling.type = this.previousElementSibling.type === 'password' ? 'text' : 'password'">
+                                    👁️
+                                </button>
+                            </div>
+                            <div class="nsec-buttons">
+                                <button id="nsec-login-btn" class="secondary-btn">Login with nsec</button>
+                                <button id="generate-nsec-btn" class="secondary-btn">Generate New nsec</button>
+                            </div>
+                        </div>
                         <p class="option-note">Alternative login method for mobile users. May not support all Nostr features.</p>
                         <p class="warning-text">⚠️ Only enter your nsec on trusted devices</p>
                     </div>
+                </div>
+
+                <!-- Add this after the login-options div but still inside welcome-container -->
+                <div class="nostr-info">
+                    <h3>What is Nostr?</h3>
+                    <p>Nostr is a decentralized social network protocol that enables censorship-resistant communication.</p>
+                    
+                    <div class="info-section">
+                        <h4>About NSEC Keys:</h4>
+                        <ul>
+                            <li>🔑 An NSEC is your private key - like a password that gives full access to your account</li>
+                            <li>🔒 Never share your NSEC with anyone</li>
+                            <li>💾 Store it securely - if you lose it, you can't recover your account</li>
+                            <li>🆕 New to Nostr? Click "Generate New nsec" to create a fresh account</li>
+                        </ul>
+                    </div>
+
+                    <div class="info-section">
+                        <h4>Getting Started:</h4>
+                        <ol>
+                            <li>Generate a new NSEC or use an existing one</li>
+                            <li>Save your NSEC somewhere safe</li>
+                            <li>Log in and set up your profile</li>
+                            <li>Add your Nano address to appear in the Nano feed</li>
+                        </ol>
+                    </div>
+
+                    <p class="recommendation-note">
+                        💡 For better security, we recommend using the Alby browser extension instead of entering your NSEC directly.
+                    </p>
                 </div>
             </div>
         </div>

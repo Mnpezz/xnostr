@@ -85,10 +85,13 @@ Live at https://mnpezz.github.io/xnostr/
 3. Open `http://localhost:8000` in your browser
 
 ### For New Users
-1. If you're new to Nostr:
-   - First create an account on [iris.to](https://iris.to)
-   - Get familiar with Nostr basics
-   - Return to xnostr with your nsec key
+1. Choose your login method:
+   - **Desktop (Recommended)**: Install [Alby Extension](https://getalby.com)
+   - **Mobile or No Extension**: Use NSEC key login
+     - Click "Generate New nsec" for a new account
+     - Save the generated key securely
+     - Use the visibility toggle to verify key
+     - Login with your saved key
 
 2. Enable Dark Mode (Optional):
    - Click the Settings tab
@@ -230,3 +233,15 @@ Common issues and solutions:
    - Try toggling dark mode
    - Refresh the page
    - Clear browser cache
+
+### NSEC Key Management
+- **Generating New Key**:
+  - Use the "Generate New nsec" button
+  - Copy key from the popup immediately
+  - Store key securely before logging in
+  - Use visibility toggle to verify copied key correctly
+
+- **Key Visibility**:
+  - Toggle eye icon to show/hide key
+  - Verify key format starts with "nsec1"
+  - Copy key before closing generator popup

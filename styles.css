@@ -638,7 +638,7 @@ h4 {
 }
 
 #create-post-content {
-    width: 100%;
+    width: 92%;
     min-height: 200px;
     padding: 20px;
     border: 1px solid var(--border-color);

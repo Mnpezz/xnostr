@@ -42,6 +42,9 @@ class App {
 
         this.setupCharacterCounters();
         this.setupDarkMode();
+
+        // Add to constructor
+        document.getElementById('generate-nsec-btn')?.addEventListener('click', () => this.generateNewNsec());
     }
 
     setupEventListeners() {
@@ -2121,6 +2124,49 @@ class App {
             // Reset button state
             submitButton.disabled = false;
             submitButton.textContent = 'Send Reply';
+        }
+    }
+
+    // Add this method to the App class
+    async generateNewNsec() {
+        try {
+            // Generate a new private key
+            const privateKey = window.NostrTools.generatePrivateKey();
+            // Convert to nsec format
+            const nsec = window.NostrTools.nip19.nsecEncode(privateKey);
+            
+            // Update the input field
+            const nsecInput = document.getElementById('nsec-input');
+            nsecInput.value = nsec;
+            
+            // Create and show modal with copyable nsec
+            const modalHtml = `
+                <div class="modal-content">
+                    <h4>Your New NSEC Key</h4>
+                    <p class="warning-text">⚠️ Save this key securely! You won't be able to recover it if lost.</p>
+                    <div class="nsec-display">
+                        <code>${nsec}</code>
+                        <button onclick="navigator.clipboard.writeText('${nsec}')">Copy</button>
+                    </div>
+                    <button class="close-modal">Close</button>
+                </div>
+            `;
+
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = modalHtml;
+            document.body.appendChild(modal);
+
+            // Add event listener to close button
+            modal.querySelector('.close-modal').addEventListener('click', () => {
+                modal.remove();
+            });
+
+            // Show success message
+            this.showSuccessMessage('New nsec key generated! Make sure to save it securely.');
+        } catch (error) {
+            console.error('Error generating nsec:', error);
+            this.showErrorMessage('Failed to generate nsec key: ' + error.message);
         }
     }
 }

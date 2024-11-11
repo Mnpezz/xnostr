@@ -1315,10 +1315,13 @@ class App {
 
         const createPostBtn = document.getElementById('create-post-btn');
         const textarea = document.getElementById('create-post-content');
+        const originalBtnText = createPostBtn.textContent;
         
         try {
+            // Show loading state
             createPostBtn.disabled = true;
-            createPostBtn.textContent = 'Posting...';
+            createPostBtn.innerHTML = '<span class="spinner"></span> Posting...';
+            textarea.disabled = true;
             
             const event = {
                 kind: 1,
@@ -1351,8 +1354,13 @@ class App {
                 }
             }
 
+            // Clear textarea and show success message
             textarea.value = '';
             this.showSuccessMessage('Post created successfully!');
+            
+            // Switch to appropriate feed tab
+            const targetTab = this.knownNanoUsers.has(this.nostrClient.pubkey) ? 'nano-feed-tab' : 'feed-tab';
+            this.switchTab(targetTab);
             
             // Trigger a feed refresh after posting
             if (this.currentFeedTab === 'nano-feed') {
@@ -1362,10 +1370,14 @@ class App {
             }
             
         } catch (error) {
+            console.error('Error creating post:', error);
             this.showErrorMessage('Failed to create post: ' + error.message);
         } finally {
+            // Reset UI state
             createPostBtn.disabled = false;
-            createPostBtn.textContent = 'Post';
+            createPostBtn.textContent = originalBtnText;
+            textarea.disabled = false;
+            textarea.focus();
         }
     }
 

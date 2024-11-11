@@ -106,11 +106,28 @@ class NostrClient {
     }
 
     async initWithPrivateKey(privateKey) {
-        await this.loadSavedRelays();
-        this.privateKey = privateKey;
-        this.pubkey = window.NostrTools.getPublicKey(privateKey);
-        await this.connectToRelays();
-        await this.fetchProfile();
+        try {
+            await this.loadSavedRelays();
+            this.privateKey = privateKey;
+            this.pubkey = window.NostrTools.getPublicKey(privateKey);
+            await this.connectToRelays();
+            await this.fetchProfile();
+            
+            // Initialize empty maps and sets
+            this.nanoPosts = new Map();
+            this.profileCache = new Map();
+            
+            // Cache the current user's profile
+            if (this.profile) {
+                this.profileCache.set(this.pubkey, this.profile);
+            }
+            
+            console.log('Successfully initialized with private key');
+            return true;
+        } catch (error) {
+            console.error('Error initializing with private key:', error);
+            throw error;
+        }
     }
 
     async connectToRelays() {
@@ -178,11 +195,13 @@ class NostrClient {
 
             let signedEvent;
             if (this.privateKey) {
-                // Sign with private key
-                const sig = window.NostrTools.signEvent(eventToSign, this.privateKey);
-                signedEvent = { ...eventToSign, sig };
+                // Sign with private key for nsec login
+                signedEvent = {
+                    ...eventToSign,
+                    sig: window.NostrTools.signEvent(eventToSign, this.privateKey)
+                };
             } else {
-                // Sign with extension
+                // Sign with extension for Alby login
                 signedEvent = await window.nostr.signEvent(eventToSign);
             }
 
@@ -194,10 +213,11 @@ class NostrClient {
 
             for (const relay of Object.values(this.relays)) {
                 try {
-                    await new Promise((resolve, reject) => {
-                        const pub = relay.publish(signedEvent);
-                        
-                        if (pub && typeof pub.on === 'function') {
+                    const pub = relay.publish(signedEvent);
+                    
+                    if (pub && typeof pub.on === 'function') {
+                        // Handle Alby-style publish with event emitters
+                        await new Promise((resolve, reject) => {
                             pub.on('ok', () => {
                                 console.log(`Published to ${relay.url}`);
                                 published = true;
@@ -211,18 +231,15 @@ class NostrClient {
 
                             // Add timeout
                             setTimeout(() => reject('Timeout'), 5000);
-                        } else {
-                            // Handle case where publish returns a promise
-                            Promise.resolve(pub)
-                                .then(() => {
-                                    console.log(`Published to ${relay.url}`);
-                                    published = true;
-                                    resolve();
-                                })
-                                .catch(reject);
-                        }
-                    });
+                        });
+                    } else {
+                        // Handle nsec-style publish which returns a Promise
+                        await pub;
+                        console.log(`Published to ${relay.url}`);
+                        published = true;
+                    }
                 } catch (error) {
+                    console.error(`Failed to publish to ${relay.url}:`, error);
                     errors.push(error.message || error);
                 }
             }

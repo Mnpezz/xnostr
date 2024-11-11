@@ -1,3 +1,6 @@
+// Add this at the top of the file with other constants
+const DEFAULT_AVATAR = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0yMCAyMXYtMmE0IDQgMCAwIDAtNC00SDhhNCA0IDAgMCAwLTQgNHYyIj48L3BhdGg+PGNpcmNsZSBjeD0iMTIiIGN5PSI3IiByPSI0Ij48L2NpcmNsZT48L3N2Zz4=';
+
 class App {
     constructor() {
         this.nostrClient = new NostrClient();
@@ -1010,17 +1013,22 @@ class App {
                 postContent.className = 'post-content';
                 
                 // Create profile header
+                const previewId = `preview-${event.id}-${event.pubkey}`;
                 const profileHeader = document.createElement('div');
                 profileHeader.className = 'post-header';
                 profileHeader.innerHTML = `
-                    ${authorProfile?.picture ? 
-                        `<img src="${authorProfile.picture}" 
-                              class="profile-picture" 
-                              onerror="this.src='default-avatar.png'">` 
+                    ${authorProfile?.picture ? `
+                        <img src="${this.nostrClient.sanitizeImageUrl(authorProfile.picture)}" 
+                             class="profile-picture" 
+                             onclick="app.toggleProfilePreview(event, '${event.pubkey}', '${previewId}')"
+                             onerror="this.src='${DEFAULT_AVATAR}'">` 
                         : '<div class="profile-picture-placeholder"></div>'
                     }
                     <div class="post-header-info">
-                        <span class="author-name">${authorProfile?.name || event.pubkey.slice(0, 8)}...</span>
+                        <span class="author-name" 
+                              onclick="app.toggleProfilePreview(event, '${event.pubkey}', '${previewId}')">
+                            ${authorProfile?.name || event.pubkey.slice(0, 8)}...
+                        </span>
                         ${authorProfile?.nip05 ? `<span class="nip05">✓ ${authorProfile.nip05}</span>` : ''}
                     </div>
                 `;
@@ -1127,7 +1135,7 @@ class App {
             
             buttons.push(`
                 <button class="payment-btn nano-tip" onclick="app.sendNanoTip('${nanoAddress}', '${profile.name || 'User'}')">
-                    💎 Tip Nano
+                    Ӿ Tip Nano
                 </button>
             `);
         }
@@ -1956,7 +1964,7 @@ class App {
                     ${authorProfile?.picture ? `
                         <img src="${this.nostrClient.sanitizeImageUrl(authorProfile.picture)}" 
                              class="profile-picture" 
-                             onerror="this.src='default-avatar.png'; console.log('Failed to load image for ${reply.pubkey}');">` 
+                             onerror="this.src='${DEFAULT_AVATAR}'; console.log('Failed to load image for ${reply.pubkey}');">` 
                         : '<div class="profile-picture-placeholder"></div>'
                     }
                     <div class="reply-header-info">
@@ -2180,6 +2188,96 @@ class App {
             console.error('Error generating nsec:', error);
             this.showErrorMessage('Failed to generate nsec key: ' + error.message);
         }
+    }
+
+    // Add this new method to the App class
+    async toggleProfilePreview(event, pubkey, previewId) {
+        event.stopPropagation();
+        
+        // Find the post container
+        const postContainer = event.target.closest('.post');
+        if (!postContainer) return;
+        
+        // Find or create preview container
+        let preview = document.getElementById(previewId);
+        const isActive = preview?.classList.contains('active');
+        
+        // Remove any other active previews
+        document.querySelectorAll('.profile-preview.active').forEach(p => {
+            if (p.id !== previewId) {
+                p.classList.remove('active');
+            }
+        });
+        
+        if (isActive) {
+            preview.classList.remove('active');
+            return;
+        }
+        
+        if (!preview) {
+            try {
+                const profile = await this.nostrClient.getProfileForPubkey(pubkey);
+                if (!profile) return;
+                
+                preview = document.createElement('div');
+                preview.id = previewId;
+                preview.className = 'profile-preview';
+                
+                // Create preview content
+                preview.innerHTML = `
+                    <div class="preview-banner" ${profile.banner ? `style="background-image: url('${this.nostrClient.sanitizeImageUrl(profile.banner)}')"` : ''}></div>
+                    <button class="close-preview" type="button" aria-label="Close preview">×</button>
+                    <div class="preview-content">
+                        <div class="preview-header">
+                            ${profile.picture ? `
+                                <img src="${this.nostrClient.sanitizeImageUrl(profile.picture)}" 
+                                     class="preview-picture" 
+                                     onerror="this.src='${DEFAULT_AVATAR}'">
+                            ` : '<div class="preview-picture-placeholder"></div>'}
+                            <div class="preview-info">
+                                <div class="preview-name">${profile.name || 'Anonymous'}</div>
+                                ${profile.nip05 ? `<div class="preview-nip05">✓ ${profile.nip05}</div>` : ''}
+                            </div>
+                        </div>
+                        ${profile.about ? `
+                            <div class="preview-about">${profile.about}</div>
+                        ` : ''}
+                        <div class="preview-meta">
+                            ${profile.lud16 ? `
+                                <span>⚡ ${profile.lud16}</span>
+                            ` : ''}
+                            ${profile.nano_address ? `
+                                <span>Ӿ ${profile.nano_address}</span>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+                
+                // Add to post container
+                postContainer.appendChild(preview);
+                
+                // Add click handler to close button
+                const closeBtn = preview.querySelector('.close-preview');
+                closeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    preview.classList.remove('active');
+                });
+                
+                // Add click handler to close preview when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!preview.contains(e.target) && 
+                        !e.target.closest('.post-header') && 
+                        preview.classList.contains('active')) {
+                        preview.classList.remove('active');
+                    }
+                });
+            } catch (error) {
+                console.error('Error creating profile preview:', error);
+                return;
+            }
+        }
+        
+        preview.classList.add('active');
     }
 }
 

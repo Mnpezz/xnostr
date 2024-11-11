@@ -1542,7 +1542,16 @@ class App {
                 }
             }, 45000);
 
+            // Add event listeners for post creation
+            document.getElementById('create-post-btn').addEventListener('click', () => this.createPost());
+            
+            // Setup character counters
+            this.setupCharacterCounters();
+
             this.showSuccessMessage('Successfully logged in!');
+            
+            // Switch to create post tab
+            this.switchTab('create-post-tab');
             
         } catch (error) {
             console.error('Login error:', error);

@@ -323,7 +323,6 @@ class NostrClient {
                     for (const pattern of patterns) {
                         const match = text.match(pattern);
                         if (match) {
-                            console.log(`Found nano address with pattern ${pattern}:`, match[1]);
                             return match[1];
                         }
                     }
@@ -541,7 +540,6 @@ class NostrClient {
 
                 // Cache the processed profile
                 this.profileCache.set(pubkey, processedProfile);
-                console.log(`Merged profile for ${pubkey}:`, processedProfile);
                 return processedProfile;
             } catch (error) {
                 console.error('Error processing merged profile:', error);
@@ -585,18 +583,9 @@ class NostrClient {
                 if (events.length > 0) {
                     const profileEvent = events.sort((a, b) => b.created_at - a.created_at)[0];
                     
-                    // Log the complete raw event and content
-                    console.log('Raw event:', profileEvent);
-                    console.log('Raw content (before JSON parse):', profileEvent.content);
-                    console.log('Content length:', profileEvent.content.length);
-                    console.log('Content bytes:', Array.from(profileEvent.content).map(c => c.charCodeAt(0)));
-                    
                     try {
                         const profile = JSON.parse(profileEvent.content);
-                        console.log('Parsed profile:', profile);
-                        console.log('Raw about field:', profile.about);
-                        console.log('About field length:', profile.about?.length);
-                        console.log('About field bytes:', Array.from(profile.about || '').map(c => c.charCodeAt(0)));
+
 
                         // Enhanced nano address detection
                         const findNanoAddress = (text) => {
@@ -612,7 +601,6 @@ class NostrClient {
                             for (const pattern of patterns) {
                                 const match = text.match(pattern);
                                 if (match) {
-                                    console.log(`Found nano address in text: ${match[1]}`);
                                     return match[1];
                                 }
                             }
@@ -628,7 +616,6 @@ class NostrClient {
                             findNanoAddress(profile.name);
 
                         this.profile = profile;
-                        console.log('Final profile:', this.profile);
                         sub.unsub();
                         return;
                     } catch (error) {
@@ -660,15 +647,9 @@ class NostrClient {
         
         try {
             const sanitized = new URL(url);
-            console.log('Checking image URL:', {
-                url: sanitized.toString(),
-                hostname: sanitized.hostname,
-                protocol: sanitized.protocol
-            });
             
             // Only allow https URLs
             if (sanitized.protocol !== 'https:') {
-                console.log('Blocked non-https URL:', url);
                 return null;
             }
             
@@ -699,7 +680,6 @@ class NostrClient {
 
             // Check if domain is allowed
             if (!allowedDomains.some(domain => sanitized.hostname.includes(domain))) {
-                console.log(`Blocked image from non-allowed domain: ${sanitized.hostname}`);
                 return null;
             }
 
@@ -722,7 +702,6 @@ class NostrClient {
                 };
 
                 const events = await this.queryRelay(relay, filter);
-                console.log(`Checking ${events.length} profile events from ${relay.url} for ${pubkey}`);
 
                 // Sort by timestamp to get most recent first
                 events.sort((a, b) => b.created_at - a.created_at);
@@ -730,13 +709,11 @@ class NostrClient {
                 for (const event of events) {
                     try {
                         const profile = JSON.parse(event.content);
-                        console.log(`Checking profile from ${relay.url}:`, profile);
 
                         // Check all possible fields for nano address
                         const nanoAddress = this.findNanoAddressInProfile(profile);
                         
                         if (nanoAddress) {
-                            console.log(`Found nano address for ${pubkey} in ${relay.url}:`, nanoAddress);
                             // Cache this profile since it has a nano address
                             this.profileCache.set(pubkey, {
                                 ...profile,
@@ -749,15 +726,13 @@ class NostrClient {
                             return true;
                         }
                     } catch (error) {
-                        console.error('Error parsing profile:', error);
-                    }
+/*                         console.error('Error parsing profile:', error);
+ */                    }
                 }
             }
 
-            console.log(`No nano address found in any relay for ${pubkey}`);
             return false;
         } catch (error) {
-            console.error('Error checking nano address:', error);
             return false;
         }
     }
@@ -773,7 +748,6 @@ class NostrClient {
             if (profile[field]) {
                 const nanoAddress = this.findNanoAddress(profile[field]);
                 if (nanoAddress) {
-                    console.log(`Found nano address in ${field}:`, nanoAddress);
                     return nanoAddress;
                 }
             }
@@ -781,7 +755,6 @@ class NostrClient {
 
         // Also check if there's a direct nano_address field
         if (profile.nano_address) {
-            console.log('Found direct nano_address field:', profile.nano_address);
             return profile.nano_address;
         }
 
@@ -791,9 +764,7 @@ class NostrClient {
     // Update findNanoAddress to be more robust
     findNanoAddress(text) {
         if (!text || typeof text !== 'string') return null;
-        
-        console.log('Checking text for nano address:', text);
-        
+                
         // Clean the text first
         const cleanText = text.replace(/\\n/g, '\n').trim();
         
@@ -807,7 +778,6 @@ class NostrClient {
         for (const pattern of patterns) {
             const match = cleanText.match(pattern);
             if (match) {
-                console.log(`Found nano address with pattern ${pattern}:`, match[1]);
                 return match[1];
             }
         }
@@ -898,7 +868,6 @@ class NostrClient {
     }
 
     async getReplies(eventId) {
-        console.log(`Getting replies for event ${eventId}`);
         const replies = new Map(); // Use Map to handle duplicates
         const filter = {
             kinds: [1],
@@ -908,9 +877,7 @@ class NostrClient {
 
         for (const relay of Object.values(this.relays)) {
             try {
-                console.log(`Querying ${relay.url} for replies to ${eventId}`);
                 const events = await this.queryRelay(relay, filter);
-                console.log(`Found ${events.length} potential replies from ${relay.url}`);
                 
                 for (const event of events) {
                     // Verify this is actually a reply to our event
@@ -936,7 +903,6 @@ class NostrClient {
         const sortedReplies = Array.from(replies.values())
             .sort((a, b) => a.created_at - b.created_at);
         
-        console.log(`Returning ${sortedReplies.length} unique replies for ${eventId}`);
         return sortedReplies;
     }
 
@@ -1140,7 +1106,6 @@ class NostrClient {
             try {
                 for (const filter of filters) {
                     const events = await this.queryRelay(relay, filter);
-                    console.log(`Found ${events.length} events for filter ${filter.kinds} from ${relay.url}`);
                     
                     for (const event of events) {
                         // Add author
@@ -1353,7 +1318,6 @@ class NostrClient {
                         try {
                             const profile = JSON.parse(event.content);
                             if (profile.picture) {
-                                console.log(`Found profile picture in ${relay.url}:`, profile.picture);
                                 bestProfile = profile;
                                 mostRecent = event.created_at;
                             }

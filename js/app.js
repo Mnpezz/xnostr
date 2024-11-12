@@ -339,8 +339,8 @@ class App {
                         }
                         this.feedState.renderedPosts.add(event.id);
                     } catch (error) {
-                        console.error('Error rendering post:', error);
-                    }
+/*                         console.error('Error rendering post:', error);
+ */                    }
                 }));
                 
                 // Small delay between batches
@@ -707,9 +707,7 @@ class App {
             try {
                 if (postsLoaded >= maxPosts) break;
                 
-                console.log(`Querying ${relay.url} for posts from ${pubkey}...`);
                 const events = await this.nostrClient.queryRelay(relay, filter);
-                console.log(`Got ${events.length} events from ${relay.url}`);
                 
                 for (const event of events) {
                     if (postsLoaded >= maxPosts) break;
@@ -725,7 +723,6 @@ class App {
                         
                         // Add to nanoPosts Map immediately
                         this.nostrClient.nanoPosts.set(event.id, event);
-                        console.log(`Added post ${event.id} to nano feed`);
                     }
                     
                     // Add small delay every 10 posts to keep UI responsive
@@ -1001,7 +998,6 @@ class App {
                     }
                 }
 
-                console.log(`Rendering post with profile:`, authorProfile);
                 
                 const paymentButtons = this.createPaymentButtons(authorProfile, event.pubkey);
                 const reactions = await this.nostrClient.getReactions(event.id);
@@ -1135,7 +1131,7 @@ class App {
             
             buttons.push(`
                 <button class="payment-btn nano-tip" onclick="app.sendNanoTip('${nanoAddress}', '${profile.name || 'User'}')">
-                    Ӿ Tip Nano
+                    💎 Tip Nano
                 </button>
             `);
         }
@@ -1362,21 +1358,6 @@ class App {
                 }
             }
 
-            // Clear textarea and show success message
-            textarea.value = '';
-            this.showSuccessMessage('Post created successfully!');
-            
-            // Switch to appropriate feed tab
-            const targetTab = this.knownNanoUsers.has(this.nostrClient.pubkey) ? 'nano-feed-tab' : 'feed-tab';
-            this.switchTab(targetTab);
-            
-            // Trigger a feed refresh after posting
-            if (this.currentFeedTab === 'nano-feed') {
-                await this.checkForNewNanoPosts();
-            } else {
-                await this.checkForNewGeneralPosts();
-            }
-            
         } catch (error) {
             console.error('Error creating post:', error);
             this.showErrorMessage('Failed to create post: ' + error.message);
@@ -1385,7 +1366,8 @@ class App {
             createPostBtn.disabled = false;
             createPostBtn.textContent = originalBtnText;
             textarea.disabled = false;
-            textarea.focus();
+            textarea.value = '';
+            this.showSuccessMessage('Post created successfully!');
         }
     }
 
@@ -1529,6 +1511,8 @@ class App {
             await this.setupFeed();
             this.updateRelayList();
             
+            this.showSuccessMessage('Successfully logged in!');
+
             // Start searching for nano users
             setTimeout(() => {
                 this.searchForMoreNanoUsers();
@@ -1541,8 +1525,6 @@ class App {
                     this.searchForMoreNanoUsers();
                 }
             }, 45000);
-
-            this.showSuccessMessage('Successfully logged in!');
             
         } catch (error) {
             console.error('Login error:', error);
@@ -1575,13 +1557,12 @@ class App {
         }
     }
 
-    async loadReplies(eventId) {
+async loadReplies(eventId) {
         console.log(`Loading replies for event ${eventId}`);
         const repliesDiv = document.getElementById(`replies-${eventId}`);
         const replyBtn = document.querySelector(`button[onclick="app.showReplyForm('${eventId}')"]`);
         
         if (!repliesDiv) {
-            console.error(`No replies div found for event ${eventId}`);
             return;
         }
 
@@ -1595,7 +1576,6 @@ class App {
 
             // Get replies from all relays
             const replies = await this.nostrClient.getReplies(eventId);
-            console.log(`Got ${replies.length} replies for event ${eventId}`);
 
             // Add minimum loading time of 1 second for better UX
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -2091,7 +2071,6 @@ class App {
                     if (!event.tags.some(tag => tag[0] === 'e')) {
                         this.nostrClient.nanoPosts.set(event.id, event);
                         postsAdded++;
-                        console.log(`Added post ${event.id} to nano feed (${postsAdded} total)`);
                     }
                 }
             } catch (error) {

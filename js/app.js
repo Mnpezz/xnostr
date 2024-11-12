@@ -1508,7 +1508,6 @@ class App {
 
             // Load profile and setup feed
             await this.loadProfile();
-            await this.setupFeed();
             this.updateRelayList();
             
             this.showSuccessMessage('Successfully logged in!');

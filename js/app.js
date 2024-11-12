@@ -1315,8 +1315,11 @@ class App {
 
     async createPost() {
         const content = document.getElementById('create-post-content').value.trim();
-        if (!content) return;
-
+        if (!content) {
+            this.showErrorMessage('Please enter some content for your post');
+            return;
+        }
+    
         const createPostBtn = document.getElementById('create-post-btn');
         const textarea = document.getElementById('create-post-content');
         const originalBtnText = createPostBtn.textContent;
@@ -1332,9 +1335,15 @@ class App {
                 content: content,
                 tags: []
             };
-
+    
             const publishedEvent = await this.nostrClient.publishEvent(event);
             
+            // Clear the input immediately after successful publish
+            textarea.value = '';
+            
+            // Show success message
+            this.showSuccessMessage('Post created successfully!');
+    
             // Add post to appropriate feed immediately
             if (this.knownNanoUsers.has(this.nostrClient.pubkey)) {
                 this.nanoPosts.set(publishedEvent.id, publishedEvent);
@@ -1357,19 +1366,19 @@ class App {
                     this.feedState.renderedPosts.add(publishedEvent.id);
                 }
             }
-
+    
         } catch (error) {
             console.error('Error creating post:', error);
             this.showErrorMessage('Failed to create post: ' + error.message);
+            // Re-enable textarea so user doesn't lose their content
+            textarea.disabled = false;
+            textarea.focus();
         } finally {
-            // Reset UI state
+            // Reset button state
             createPostBtn.disabled = false;
             createPostBtn.textContent = originalBtnText;
-            textarea.disabled = false;
-            textarea.value = '';
-            this.showSuccessMessage('Post created successfully!');
         }
-    }
+    } 
 
     async updateProfile(e) {
         e.preventDefault();
@@ -2088,7 +2097,6 @@ async loadReplies(eventId) {
         return postsAdded;
     }
 
-    // Add this method to the App class
     async submitReply(eventId) {
         const replyForm = document.getElementById(`reply-form-${eventId}`);
         const textarea = replyForm.querySelector('textarea');
@@ -2105,16 +2113,44 @@ async loadReplies(eventId) {
             // Create and publish the reply
             const reply = await this.nostrClient.createReply(eventId, content);
             
-            // Clear the form
+            // Clear the form immediately
             textarea.value = '';
             
             // Hide the reply form
             replyForm.style.display = 'none';
 
-            // Refresh the replies for this post
-            await this.loadReplies(eventId);
+            // Optimistically render the new reply
+            const repliesContainer = document.getElementById(`replies-${eventId}`);
+            const tempReplyDiv = document.createElement('div');
+            tempReplyDiv.className = 'reply temp-reply';
+            tempReplyDiv.innerHTML = `
+                <div class="reply-header">
+                    <img src="${this.nostrClient.profile.picture || 'default-avatar.png'}" class="profile-picture" onerror="this.src='default-avatar.png'">
+                    <div class="reply-header-info">
+                        <span class="author-name">${this.nostrClient.profile.name || 'Anonymous'}</span>
+                    </div>
+                </div>
+                <p class="reply-content">${content}</p>
+                <p class="reply-meta">Just now</p>
+            `;
+            repliesContainer.insertBefore(tempReplyDiv, repliesContainer.firstChild);
+
+            // Update UI to show new reply count
+            const replyButton = document.querySelector(`button[onclick="app.showReplyForm('${eventId}')"]`);
+            if (replyButton) {
+                const currentCount = parseInt(replyButton.getAttribute('data-replies') || '0');
+                replyButton.setAttribute('data-replies', (currentCount + 1).toString());
+                replyButton.textContent = `💬 Reply (${currentCount + 1})`;
+            }
 
             this.showSuccessMessage('Reply posted successfully!');
+
+            // Fetch and render the actual reply in the background
+            setTimeout(async () => {
+                await this.loadReplies(eventId);
+                tempReplyDiv.remove(); // Remove the temporary reply
+            }, 1000);
+
         } catch (error) {
             console.error('Error posting reply:', error);
             this.showErrorMessage('Failed to post reply: ' + error.message);

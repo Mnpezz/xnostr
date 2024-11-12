@@ -2241,13 +2241,20 @@ class App {
                         </div>
                         ${profile.about ? `
                             <div class="preview-about">${profile.about}</div>
+                             <div class="key-row">
+                                <strong>npub:</strong>
+                                <span class="address">${window.NostrTools.nip19.npubEncode(this.nostrClient.pubkey)}</span>
+                                <button onclick="navigator.clipboard.writeText('${window.NostrTools.nip19.npubEncode(this.nostrClient.pubkey)}')">Copy npub</button>
+                            </div>
                         ` : ''}
                         <div class="preview-meta">
                             ${profile.lud16 ? `
                                 <span>⚡ ${profile.lud16}</span>
+                                <button onclick="navigator.clipboard.writeText('${profile.lud16}')">Copy zap_</button>
                             ` : ''}
                             ${profile.nano_address ? `
                                 <span>Ӿ ${profile.nano_address}</span>
+                                <button onclick="navigator.clipboard.writeText('${profile.nano_address}')">Copy nano_</button>
                             ` : ''}
                         </div>
                     </div>
